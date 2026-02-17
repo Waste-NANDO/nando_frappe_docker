@@ -106,29 +106,34 @@ HTTPS_PUBLISH_PORT=3003
 From the repo root:
 
 ```bash
-docker compose --project-name erpnext \
+sudo docker compose --project-name erpnext \
   --env-file nando-deployment/erpnext.env \
   -f compose.yaml \
   -f overrides/compose.redis.yaml \
   -f overrides/compose.mariadb.yaml \
   -f nando-deployment/compose.custom-tls.yaml \
-  config > nando-deployment/erpnext.yaml
+  config | sudo tee nando-deployment/erpnext.yaml > /dev/null
 ```
 
 This merges all compose layers into a single resolved file.
+
+> **Note:** We use `| sudo tee ... > /dev/null` instead of `>` because the
+> shell redirect `>` runs as your user and may not have write permissions to
+> the directory. `sudo tee` writes the file with root permissions.
+> Alternatively, fix ownership once with `sudo chown -R $(whoami):$(whoami) nando-deployment/`.
 
 **Re-run this command every time you change `erpnext.env` or any compose file.**
 
 ## Step 6 — Deploy the stack
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
 ```
 
 Watch logs to ensure everything starts:
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f
 ```
 
 Wait for the `configurator` service to exit with code 0. The other services
@@ -140,24 +145,46 @@ Press `Ctrl+C` to stop following logs.
 Verify all services are up:
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml ps
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml ps
 ```
 
 ## Step 7 — Create the ERPNext site
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
   bench new-site \
     --mariadb-user-host-login-scope='%' \
-    --db-root-password YOUR_DB_PASSWORD \
+    --db-root-password 'YOUR_DB_PASSWORD' \
     --install-app erpnext \
-    --admin-password YOUR_ADMIN_PASSWORD \
+    --admin-password 'YOUR_ADMIN_PASSWORD' \
     --set-default \
     apps.internal.nandoai.com
 ```
 
 Replace `YOUR_DB_PASSWORD` with the password you set in `erpnext.env`.
 Replace `YOUR_ADMIN_PASSWORD` with the password you want for the ERPNext admin user.
+
+> **Important:** Always wrap passwords in **single quotes** (`'...'`).
+> Double quotes or unquoted passwords will break if they contain `!`, `$`,
+> or other special characters that bash interprets.
+
+When prompted `Enter mysql super user [root]:`, just press **Enter** to
+accept the default (`root`).
+
+If you need to re-create the site (e.g. after a failed first attempt), add
+`--force` to drop and recreate:
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+  bench new-site \
+    --mariadb-user-host-login-scope='%' \
+    --db-root-password 'YOUR_DB_PASSWORD' \
+    --install-app erpnext \
+    --admin-password 'YOUR_ADMIN_PASSWORD' \
+    --force \
+    --set-default \
+    apps.internal.nandoai.com
+```
 
 This takes a few minutes — it creates the database, runs migrations, and
 installs ERPNext.
@@ -186,7 +213,7 @@ https://apps.internal.nandoai.com:3003
 ### Manual backup
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
   bench --site apps.internal.nandoai.com backup --with-files
 ```
 
@@ -221,26 +248,26 @@ Adjust the path if you cloned the repo somewhere other than `~/frappe_docker`.
 ### Stop the stack
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml down
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml down
 ```
 
 ### Restart the stack
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
 ```
 
 ### View logs (specific service)
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f backend
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f proxy
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f backend
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f proxy
 ```
 
 ### Run bench commands
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
   bench --site apps.internal.nandoai.com [command]
 ```
 
@@ -251,21 +278,21 @@ docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec back
 3. Pull new images and restart:
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml pull
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml pull
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
 ```
 
 4. Run migration:
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
 ### Open a shell in the backend container
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend bash
 ```
 
 ## Troubleshooting
@@ -275,7 +302,7 @@ docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec back
 If you get "404 not found" from Frappe, the site name doesn't match. Check:
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
   bench --site apps.internal.nandoai.com list-apps
 ```
 
@@ -287,13 +314,13 @@ If it fails, the site name is wrong. The `FRAPPE_SITE_NAME_HEADER` in
 Check Traefik logs:
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs proxy
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs proxy
 ```
 
 Verify certs are readable inside the container:
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec proxy ls -la /certs/
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec proxy ls -la /certs/
 ```
 
 ### MariaDB not starting
@@ -301,10 +328,68 @@ docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec prox
 Check DB logs:
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs db
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs db
 ```
 
 ### Volumes and data safety
 
 - `docker compose down` preserves volumes (data safe)
 - `docker compose down -v` **destroys volumes** (data lost) — never use this in production
+
+### Traefik errors about other containers
+
+If you see Traefik errors like `Router uses a nonexistent certificate resolver`
+or `error while parsing rule` referencing services you didn't deploy (e.g. CVAT),
+this is because Traefik discovers **all** Docker containers on the host via the
+Docker socket. It tries to parse their labels and complains about invalid ones.
+These errors are harmless and don't affect the ERPNext deployment.
+
+## Gotchas & Lessons Learned
+
+Things that tripped us up during the first deployment (2026-02-17):
+
+### 1. File permissions on the remote machine
+
+The `>` shell redirect runs as your user, not as root. So
+`sudo docker compose ... config > file` fails with "Permission denied"
+because the redirect is handled by your shell before `sudo` kicks in.
+
+**Fix:** Use `sudo docker compose ... config | sudo tee file > /dev/null`
+or fix directory ownership with `sudo chown -R $(whoami):$(whoami) nando-deployment/`.
+
+### 2. Special characters in passwords break bash
+
+Passwords containing `!`, `$`, backticks, or other shell metacharacters
+will be interpreted by bash if passed in double quotes or unquoted.
+For example, `--admin-password My!Pass` causes `-bash: !Pass: event not found`.
+
+**Fix:** Always wrap passwords in **single quotes**: `--admin-password 'My!Pass'`.
+
+### 3. "Site already exists" after a failed creation
+
+If `bench new-site` partially runs (e.g. you `Ctrl+C` or hit a password
+parsing error), the site may be in a half-created state. Re-running the
+same command gives `Site already exists`.
+
+**Fix:** Add `--force` to the `bench new-site` command to drop and recreate.
+
+### 4. MySQL super user prompt
+
+During `bench new-site`, you'll be prompted:
+`Enter mysql super user [root]:`. This is asking for the **username**,
+not a password. Just press **Enter** to accept the default `root`.
+
+### 5. Firewall / security group for the port
+
+`curl` from the server itself works, but browsers from VPN clients can't
+reach the port. This means the cloud firewall (GCP/AWS/Azure security
+group) is blocking inbound traffic on port 3003.
+
+**Fix:** Add a firewall rule allowing TCP port 3003 inbound from your
+VPC CIDR range (e.g. `10.0.0.0/8`). Verify the port is listening first:
+`sudo ss -tlnp | grep 3003`.
+
+### 6. Default admin login
+
+The admin username is `Administrator` (capital A, full word) — not
+`admin` or `Admin`.

@@ -1,0 +1,9 @@
+tls:
+  certificates:
+    - certFile: /certs/nando-erp-server.crt
+      keyFile: /certs/key.pem
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/nando-erp-server.crt
+        keyFile: /certs/key.pem

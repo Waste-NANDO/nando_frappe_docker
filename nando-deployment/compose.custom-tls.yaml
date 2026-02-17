@@ -1,0 +1,26 @@
+services:
+  frontend:
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.frontend.loadbalancer.server.port=8080
+      - traefik.http.routers.frontend-https.entrypoints=websecure
+      - traefik.http.routers.frontend-https.rule=HostRegexp(`^.+$$`)
+      - traefik.http.routers.frontend-https.tls=true
+
+  proxy:
+    image: traefik:v3.6
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.file.directory=/traefik-config
+      - --providers.file.watch=true
+      - --entrypoints.websecure.address=:443
+      - --log
+      - --accesslog
+    ports:
+      - "${HTTPS_PUBLISH_PORT:-3003}:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./nando-deployment/certs:/certs:ro
+      - ./nando-deployment/certs/traefik-tls.yml:/traefik-config/tls.yml:ro

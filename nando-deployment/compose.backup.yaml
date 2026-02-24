@@ -12,6 +12,7 @@ services:
     environment:
       SITE_NAME: ${FRAPPE_SITE_NAME_HEADER:-apps.internal.nandoai.com}
       GCS_BUCKET: ${GCS_BUCKET}
+      GCS_PREFIX: ${APP_NAME:-erpnext}/${ERPNEXT_VERSION:-latest}
       GCS_KEY_FILE: /home/frappe/gcs-key.json
       BACKUP_KEEP: ${BACKUP_KEEP:-10}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-604800}

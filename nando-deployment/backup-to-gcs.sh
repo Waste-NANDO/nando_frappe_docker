@@ -3,6 +3,7 @@ set -euo pipefail
 
 : "${SITE_NAME:?SITE_NAME is required}"
 : "${GCS_BUCKET:?GCS_BUCKET is required}"
+: "${GCS_PREFIX:?GCS_PREFIX is required}"
 GCS_KEY_FILE="${GCS_KEY_FILE:-/home/frappe/gcs-key.json}"
 BACKUP_KEEP="${BACKUP_KEEP:-10}"
 INTERVAL="${BACKUP_INTERVAL_SECONDS:-604800}"
@@ -20,7 +21,7 @@ log "Installing GCS dependencies..."
 
 log "Backup service started"
 log "  Site:     $SITE_NAME"
-log "  Bucket:   gs://$GCS_BUCKET"
+log "  Dest:     gs://$GCS_BUCKET/$GCS_PREFIX/"
 log "  Keep:     $BACKUP_KEEP backups"
 log "  Interval: $((INTERVAL / 86400))d $((INTERVAL % 86400 / 3600))h"
 
@@ -36,9 +37,9 @@ while true; do
 
   TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-  log "Uploading to gs://$GCS_BUCKET/$SITE_NAME/$TIMESTAMP/ ..."
+  log "Uploading to gs://$GCS_BUCKET/$GCS_PREFIX/$TIMESTAMP/ ..."
   if ! "$PY" /home/frappe/upload-to-gcs.py \
-    --site "$SITE_NAME" \
+    --prefix "$GCS_PREFIX" \
     --bucket "$GCS_BUCKET" \
     --key-file "$GCS_KEY_FILE" \
     --timestamp "$TIMESTAMP" \

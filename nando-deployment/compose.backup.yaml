@@ -1,0 +1,21 @@
+services:
+  backup:
+    image: ${CUSTOM_IMAGE:-frappe/erpnext}:${CUSTOM_TAG:-${ERPNEXT_VERSION}}
+    pull_policy: ${PULL_POLICY:-always}
+    restart: unless-stopped
+    platform: linux/amd64
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - ./nando-deployment/backup-to-gcs.sh:/home/frappe/backup-to-gcs.sh:ro
+      - ./nando-deployment/upload-to-gcs.py:/home/frappe/upload-to-gcs.py:ro
+      - ./nando-deployment/rd-devops-prod-relearn-0a64b79e2a62-erpnext-sa.json:/home/frappe/gcs-key.json:ro
+    environment:
+      SITE_NAME: ${FRAPPE_SITE_NAME_HEADER:-apps.internal.nandoai.com}
+      GCS_BUCKET: ${GCS_BUCKET}
+      GCS_KEY_FILE: /home/frappe/gcs-key.json
+      BACKUP_KEEP: ${BACKUP_KEEP:-10}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-604800}
+    entrypoint: ["bash", "/home/frappe/backup-to-gcs.sh"]
+    depends_on:
+      configurator:
+        condition: service_completed_successfully

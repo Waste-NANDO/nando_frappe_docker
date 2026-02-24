@@ -6,6 +6,7 @@ nando-deployment/certs/key.pem
 nando-deployment/certs/nando-erp-server.crt
 nando-deployment/erpnext.yaml
 nando-deployment/backups/
+nando-deployment/*.json
 
 # mounted volume
 sites

@@ -31,9 +31,11 @@ nando-deployment/
 │   ├── key.pem                   # Private key (gitignored, add manually)
 │   └── nando-erp-server.crt      # Certificate chain (gitignored, add manually)
 ├── compose.custom-tls.yaml       # Traefik + TLS compose override
+├── compose.backup.yaml           # GCS backup sidecar compose override
+├── backup-to-gcs.sh              # Backup entrypoint script (runs inside container)
+├── upload-to-gcs.py              # GCS upload + pruning logic
+├── rd-devops-prod-...-sa.json    # GCS service account key (gitignored, add manually)
 ├── erpnext.env                   # Environment variables (edit passwords!)
-├── backup.sh                     # Backup script
-├── backups/                      # Backup output dir (gitignored, created by script)
 └── erpnext.yaml                  # Resolved compose file (gitignored, generated)
 ```
 
@@ -99,6 +101,7 @@ ERPNEXT_VERSION=v16.5.0
 DB_PASSWORD=your_strong_db_password_here
 FRAPPE_SITE_NAME_HEADER=apps.internal.nandoai.com
 HTTPS_PUBLISH_PORT=3003
+GCS_BUCKET=your-gcs-bucket-name
 ```
 
 ## Step 5 — Generate the resolved compose file
@@ -112,10 +115,12 @@ sudo docker compose --project-name erpnext \
   -f overrides/compose.redis.yaml \
   -f overrides/compose.mariadb.yaml \
   -f nando-deployment/compose.custom-tls.yaml \
+  -f nando-deployment/compose.backup.yaml \
   config | sudo tee nando-deployment/erpnext.yaml > /dev/null
 ```
 
-This merges all compose layers into a single resolved file.
+This merges all compose layers (including the GCS backup sidecar) into a single
+resolved file.
 
 > **Note:** We use `| sudo tee ... > /dev/null` instead of `>` because the
 > shell redirect `>` runs as your user and may not have write permissions to
@@ -217,31 +222,59 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec
   bench --site apps.internal.nandoai.com backup --with-files
 ```
 
-### Automated backup (cron)
+### Automated backup to GCS
 
-The included `backup.sh` script runs a backup, copies files out of the Docker
-volume to `nando-deployment/backups/` on the host, and cleans up backups older
-than 7 days.
+The stack includes a `backup` sidecar container that runs inside Docker
+alongside the other services. It uses the same ERPNext image and has direct
+access to the `sites` volume — no `docker exec` or `docker cp` needed.
 
-Test it manually first:
+**What it does (every 7 days):**
+
+1. Runs `bench --site <site> backup --with-files`
+2. Uploads the DB dump + file tarballs to `gs://<bucket>/<site>/<timestamp>/`
+3. Prunes old backups in GCS, keeping only the latest 10
+4. Cleans up local backup files to save disk space
+
+**Setup:**
+
+1. Place the GCS service account key on the host:
 
 ```bash
-./nando-deployment/backup.sh
+ls nando-deployment/rd-devops-prod-relearn-0a64b79e2a62-erpnext-sa.json
 ```
 
-Then set up a cron job (e.g., every 6 hours):
+2. Add `GCS_BUCKET` to `nando-deployment/erpnext.env`:
+
+```env
+GCS_BUCKET=your-gcs-bucket-name
+```
+
+3. Re-run Step 5 to regenerate the resolved compose file (the backup compose
+   layer is already included in the generation command).
+
+4. Deploy:
 
 ```bash
-crontab -e
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
 ```
 
-Add:
+The backup service starts automatically. Check its logs:
 
-```cron
-0 */6 * * * /root/frappe_docker/nando-deployment/backup.sh >> /root/frappe_docker/nando-deployment/backups/backup.log 2>&1
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f backup
 ```
 
-Adjust the path if you cloned the repo somewhere other than `~/frappe_docker`.
+**Configuration (via `erpnext.env`):**
+
+| Variable | Default | Description |
+|---|---|---|
+| `GCS_BUCKET` | *(required)* | GCS bucket name |
+| `BACKUP_KEEP` | `10` | Number of backup sets to retain in GCS |
+| `BACKUP_INTERVAL_SECONDS` | `604800` | Seconds between backups (default: 7 days) |
+
+**Required IAM permissions** on the service account:
+`roles/storage.objectAdmin` on the target bucket (or at minimum
+`storage.objects.create`, `storage.objects.delete`, `storage.objects.list`).
 
 ## Common Operations
 

@@ -426,3 +426,40 @@ VPC CIDR range (e.g. `10.0.0.0/8`). Verify the port is listening first:
 
 The admin username is `Administrator` (capital A, full word) — not
 `admin` or `Admin`.
+
+## Enable Server Scripts
+
+Server Scripts (Python in DocType / System Console) are off by default. Turn
+them on with a **global** bench config flag (writes
+`sites/common_site_config.json` on the sites volume — it **persists** across
+container restarts and image upgrades).
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+  bench set-config -g server_script_enabled 1
+```
+
+Restart so app processes reload config. **Minimal downtime** — only the
+backend (add other services if you split workers/scheduler):
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml restart backend
+```
+
+**Full stack recycle** — detached (`-d`); restarts every service (DB, Redis,
+proxy, workers, etc.), so expect a longer blip:
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml down
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+```
+
+Plain `down` keeps volumes (your site data and `common_site_config.json` stay).
+Do **not** use `down -v` in production.
+
+You do not need a separate repo config file unless you intentionally manage
+`common_site_config.json` yourself; `bench set-config -g` is the usual approach.
+
+**Security:** Server Scripts execute Python with site privileges. Only enable
+this if you trust everyone who can create or edit server scripts, and keep
+ERPNext patched.

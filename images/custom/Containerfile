@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.4
+
 ARG PYTHON_VERSION=3.14.2
 ARG DEBIAN_BASE=bookworm
 FROM python:${PYTHON_VERSION}-slim-${DEBIAN_BASE} AS base
@@ -16,6 +18,7 @@ RUN useradd -ms /bin/bash frappe \
     && apt-get install --no-install-recommends -y \
     curl \
     git \
+    openssh-client \
     vim \
     nginx \
     gettext-base \
@@ -117,7 +120,9 @@ USER frappe
 
 ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
-RUN export APP_INSTALL_ARGS="" && \
+RUN --mount=type=ssh,required=false mkdir -p /home/frappe/.ssh && \
+  ssh-keyscan github.com >> /home/frappe/.ssh/known_hosts && \
+  export APP_INSTALL_ARGS="" && \
   if [ -n "${APPS_JSON_BASE64}" ]; then \
     export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
   fi && \

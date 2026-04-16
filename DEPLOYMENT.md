@@ -104,6 +104,51 @@ HTTPS_PUBLISH_PORT=3003
 GCS_BUCKET=your-gcs-bucket-name
 ```
 
+If you want to bundle a private custom app into the image, also add:
+
+```env
+CUSTOM_APP_REPO=git@github.com:Waste-NANDO/nando-erpnext-module.git
+CUSTOM_APP_BRANCH=
+CUSTOM_APP_NAME=replace_with_actual_app_name
+CUSTOM_IMAGE=nando-erpnext-custom
+CUSTOM_TAG=v16.5.0-custom
+PULL_POLICY=never
+```
+
+Leave `CUSTOM_APP_BRANCH` blank to use the repository default branch. Set
+`CUSTOM_APP_NAME` to the app's installable bench name, which is often different
+from the GitHub repository name.
+
+## Optional — Build a custom app image
+
+Use this only if you are deploying a custom app from GitHub. The helper script
+builds a local image that includes both ERPNext and your custom app, using the
+SSH key loaded in your server's `ssh-agent`.
+
+Verify the key is loaded:
+
+```bash
+ssh-add -l
+```
+
+If it is not, start an agent and add the key:
+
+```bash
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/<github-key>
+```
+
+Then build the image from the repo root:
+
+```bash
+./nando-deployment/build-custom-image.sh
+```
+
+This reads `nando-deployment/erpnext.env`, builds
+`nando-erpnext-custom:v16.5.0-custom` by default, and uses Docker BuildKit SSH
+forwarding so private `git@github.com:...` repositories can be cloned during
+the image build.
+
 ## Step 5 — Generate the resolved compose file
 
 From the repo root:
@@ -193,6 +238,18 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec
 
 This takes a few minutes — it creates the database, runs migrations, and
 installs ERPNext.
+
+## Optional — Install the custom app on the site
+
+Building the image only makes the app code available inside the containers. You
+still need to install it on the site once:
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+  bench --site apps.internal.nandoai.com install-app YOUR_CUSTOM_APP_NAME
+```
+
+Replace `YOUR_CUSTOM_APP_NAME` with the value you set in `CUSTOM_APP_NAME`.
 
 ## Step 8 — Verify
 
@@ -307,15 +364,53 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec
 ### Migrate after ERPNext version update
 
 1. Update `ERPNEXT_VERSION` in `nando-deployment/erpnext.env`
-2. Re-run Step 5 to regenerate the resolved compose file
-3. Pull new images and restart:
+2. If you use a custom app image, update `CUSTOM_TAG` too, then rebuild it:
+
+```bash
+./nando-deployment/build-custom-image.sh
+```
+
+3. Re-run Step 5 to regenerate the resolved compose file
+4. Restart the stack:
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+```
+
+If you are still using the official `frappe/erpnext` image, pull before restart:
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml pull
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
 ```
 
-4. Run migration:
+5. Run migration:
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+  bench --site apps.internal.nandoai.com migrate
+```
+
+### Update only the custom app from GitHub
+
+When the custom app repository changes and you want to deploy a new version:
+
+1. If needed, change `CUSTOM_APP_BRANCH` in `nando-deployment/erpnext.env`
+2. Bump `CUSTOM_TAG` in `nando-deployment/erpnext.env` so Compose sees a new image version
+3. Rebuild the image:
+
+```bash
+./nando-deployment/build-custom-image.sh
+```
+
+4. Re-run Step 5 to regenerate the resolved compose file
+5. Redeploy:
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+```
+
+6. Run migration:
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \

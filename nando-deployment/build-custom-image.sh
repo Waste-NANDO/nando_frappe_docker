@@ -4,6 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${1:-${SCRIPT_DIR}/erpnext.env}"
+FETCH_SCRIPT="${SCRIPT_DIR}/fetch-custom-app.sh"
+LOCAL_APP_DIR="${SCRIPT_DIR}/custom-app-src"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Env file not found: ${ENV_FILE}" >&2
@@ -26,24 +28,15 @@ CUSTOM_IMAGE="${CUSTOM_IMAGE:-nando-erpnext-custom}"
 CUSTOM_TAG="${CUSTOM_TAG:-${ERPNEXT_VERSION}-custom}"
 FRAPPE_BRANCH="${FRAPPE_BRANCH:-${ERPNEXT_VERSION}}"
 
-if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
-  cat >&2 <<'EOF'
-SSH agent not detected.
-
-Start an agent, add the GitHub deploy key, and rerun:
-  eval "$(ssh-agent -s)"
-  ssh-add ~/.ssh/<github-key>
-EOF
+if [[ ! -x "${FETCH_SCRIPT}" ]]; then
+  echo "Fetch script is missing or not executable: ${FETCH_SCRIPT}" >&2
   exit 1
 fi
 
-if ! ssh-add -l >/dev/null 2>&1; then
-  cat >&2 <<'EOF'
-No SSH keys are currently loaded in the agent.
+"${FETCH_SCRIPT}" "${ENV_FILE}"
 
-Load the GitHub deploy key, then rerun:
-  ssh-add ~/.ssh/<github-key>
-EOF
+if [[ ! -d "${LOCAL_APP_DIR}/.git" ]]; then
+  echo "Local custom app checkout is missing: ${LOCAL_APP_DIR}" >&2
   exit 1
 fi
 
@@ -62,7 +55,7 @@ cat > "${apps_json}" <<EOF
     "branch": "${ERPNEXT_VERSION}"
   },
   {
-    "url": "${CUSTOM_APP_REPO}"${custom_branch_line}
+    "url": "file:///opt/frappe/custom-app-src"${custom_branch_line}
   }
 ]
 EOF
@@ -71,7 +64,6 @@ APPS_JSON_BASE64="$(base64 < "${apps_json}" | tr -d '\n')"
 
 docker buildx build \
   --load \
-  --ssh default \
   --build-arg FRAPPE_PATH="https://github.com/frappe/frappe" \
   --build-arg FRAPPE_BRANCH="${FRAPPE_BRANCH}" \
   --build-arg APPS_JSON_BASE64="${APPS_JSON_BASE64}" \

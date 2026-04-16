@@ -121,9 +121,26 @@ from the GitHub repository name.
 
 ## Optional — Build a custom app image
 
-Use this only if you are deploying a custom app from GitHub. The helper script
-builds a local image that includes both ERPNext and your custom app, using the
-SSH key loaded in your server's `ssh-agent`.
+Yes, you really do want a custom image for this. The recommended production
+pattern is:
+
+1. Start from the standard ERPNext image build
+2. Add your custom app to that image
+3. Deploy the resulting custom image
+
+Do **not** install the app into a running container and expect it to persist
+across container recreation.
+
+This repo now uses a two-step custom app workflow:
+
+1. Fetch or update the private app into `nando-deployment/custom-app-src/`
+2. Build an image that clones the app from that local checkout during
+   `bench init`
+
+This avoids GitHub auth issues during `docker build` while keeping the final
+deployment image immutable and reproducible.
+
+The fetch step needs the GitHub deploy key loaded in your server's `ssh-agent`.
 
 Verify the key is loaded:
 
@@ -138,6 +155,12 @@ eval "$(ssh-agent -s)"
 ssh-add ~/.ssh/<github-key>
 ```
 
+Fetch the app checkout:
+
+```bash
+./nando-deployment/fetch-custom-app.sh
+```
+
 Then build the image from the repo root:
 
 ```bash
@@ -145,8 +168,8 @@ Then build the image from the repo root:
 ```
 
 This reads `nando-deployment/erpnext.env`, builds
-`nando-erpnext-custom:v16.5.0-custom` by default, and uses Docker BuildKit SSH
-forwarding so private `git@github.com:...` repositories can be cloned during
+`nando-erpnext-custom:v16.5.0-custom` by default, and uses the local checkout
+in `nando-deployment/custom-app-src/` instead of reaching back to GitHub during
 the image build.
 
 ## Step 5 — Generate the resolved compose file
@@ -364,9 +387,10 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec
 ### Migrate after ERPNext version update
 
 1. Update `ERPNEXT_VERSION` in `nando-deployment/erpnext.env`
-2. If you use a custom app image, update `CUSTOM_TAG` too, then rebuild it:
+2. If you use a custom app image, update `CUSTOM_TAG` too, then refresh the app checkout and rebuild it:
 
 ```bash
+./nando-deployment/fetch-custom-app.sh
 ./nando-deployment/build-custom-image.sh
 ```
 
@@ -397,9 +421,10 @@ When the custom app repository changes and you want to deploy a new version:
 
 1. If needed, change `CUSTOM_APP_BRANCH` in `nando-deployment/erpnext.env`
 2. Bump `CUSTOM_TAG` in `nando-deployment/erpnext.env` so Compose sees a new image version
-3. Rebuild the image:
+3. Refresh the local checkout and rebuild the image:
 
 ```bash
+./nando-deployment/fetch-custom-app.sh
 ./nando-deployment/build-custom-image.sh
 ```
 

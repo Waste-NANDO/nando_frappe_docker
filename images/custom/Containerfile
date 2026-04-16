@@ -18,7 +18,6 @@ RUN useradd -ms /bin/bash frappe \
     && apt-get install --no-install-recommends -y \
     curl \
     git \
-    openssh-client \
     vim \
     nginx \
     gettext-base \
@@ -116,13 +115,13 @@ RUN if [ -n "${APPS_JSON_BASE64}" ]; then \
     mkdir /opt/frappe && echo "${APPS_JSON_BASE64}" | base64 -d > /opt/frappe/apps.json; \
   fi
 
+COPY nando-deployment/custom-app-src /opt/frappe/custom-app-src
+
 USER frappe
 
 ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
-RUN --mount=type=ssh,required=false mkdir -p /home/frappe/.ssh && \
-  ssh-keyscan github.com >> /home/frappe/.ssh/known_hosts && \
-  export APP_INSTALL_ARGS="" && \
+RUN export APP_INSTALL_ARGS="" && \
   if [ -n "${APPS_JSON_BASE64}" ]; then \
     export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
   fi && \

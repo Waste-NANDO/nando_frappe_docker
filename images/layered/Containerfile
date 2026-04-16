@@ -10,19 +10,15 @@ ARG APPS_JSON_BASE64
 
 USER root
 
-RUN apt-get update \
-  && apt-get install --no-install-recommends -y openssh-client \
-  && rm -rf /var/lib/apt/lists/*
-
 RUN if [ -n "${APPS_JSON_BASE64}" ]; then \
     mkdir /opt/frappe && echo "${APPS_JSON_BASE64}" | base64 -d > /opt/frappe/apps.json; \
   fi
 
+COPY nando-deployment/custom-app-src /opt/frappe/custom-app-src
+
 USER frappe
 
-RUN --mount=type=ssh,required=false mkdir -p /home/frappe/.ssh && \
-  ssh-keyscan github.com >> /home/frappe/.ssh/known_hosts && \
-  export APP_INSTALL_ARGS="" && \
+RUN export APP_INSTALL_ARGS="" && \
   if [ -n "${APPS_JSON_BASE64}" ]; then \
     export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
   fi && \

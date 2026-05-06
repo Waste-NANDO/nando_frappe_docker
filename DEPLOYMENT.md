@@ -170,7 +170,8 @@ Then build the image from the repo root:
 This reads `nando-deployment/erpnext.env`, builds
 `nando-erpnext-custom:v16.5.0-custom` by default, and uses the local checkout
 in `nando-deployment/custom-app-src/` instead of reaching back to GitHub during
-the image build.
+the image build. It also regenerates `nando-deployment/erpnext.yaml` after a
+successful build.
 
 ## Step 5 — Generate the resolved compose file
 
@@ -195,7 +196,8 @@ resolved file.
 > the directory. `sudo tee` writes the file with root permissions.
 > Alternatively, fix ownership once with `sudo chown -R $(whoami):$(whoami) nando-deployment/`.
 
-**Re-run this command every time you change `erpnext.env` or any compose file.**
+**Re-run this command every time you change `erpnext.env` or any compose file
+without using `./nando-deployment/build-custom-image.sh`.**
 
 ## Step 6 — Deploy the stack
 

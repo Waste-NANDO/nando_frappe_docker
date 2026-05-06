@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${1:-${SCRIPT_DIR}/erpnext.env}"
 FETCH_SCRIPT="${SCRIPT_DIR}/fetch-custom-app.sh"
 LOCAL_APP_DIR="${SCRIPT_DIR}/custom-app-src"
+RESOLVED_COMPOSE_FILE="${SCRIPT_DIR}/erpnext.yaml"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Env file not found: ${ENV_FILE}" >&2
@@ -71,9 +72,19 @@ docker buildx build \
   --file "${REPO_ROOT}/images/layered/Containerfile" \
   "${REPO_ROOT}"
 
+docker compose --project-name erpnext \
+  --env-file "${ENV_FILE}" \
+  -f "${REPO_ROOT}/compose.yaml" \
+  -f "${REPO_ROOT}/overrides/compose.redis.yaml" \
+  -f "${REPO_ROOT}/overrides/compose.mariadb.yaml" \
+  -f "${SCRIPT_DIR}/compose.custom-tls.yaml" \
+  -f "${SCRIPT_DIR}/compose.backup.yaml" \
+  config > "${RESOLVED_COMPOSE_FILE}"
+
 cat <<EOF
 
 Built image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
+Rendered compose file: ${RESOLVED_COMPOSE_FILE}
 
 If these lines are not already present in ${ENV_FILE}, add them before regenerating compose:
 CUSTOM_IMAGE=${CUSTOM_IMAGE}
@@ -89,8 +100,7 @@ fi
 cat <<'EOF'
 
 Then:
-  1. Regenerate the resolved compose file.
-  2. Redeploy the stack.
-  3. Run `bench --site <site> install-app <app_name>` once if the app is not installed yet.
-  4. Run `bench --site <site> migrate` after later app updates.
+  1. Redeploy the stack.
+  2. Run `bench --site <site> install-app <app_name>` once if the app is not installed yet.
+  3. Run `bench --site <site> migrate` after later app updates.
 EOF

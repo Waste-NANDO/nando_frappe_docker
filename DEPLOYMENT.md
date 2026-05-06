@@ -100,9 +100,14 @@ The file should look like:
 ERPNEXT_VERSION=v16.5.0
 DB_PASSWORD=your_strong_db_password_here
 FRAPPE_SITE_NAME_HEADER=apps.internal.nandoai.com
+FRAPPE_HOST_NAME=https://apps.internal.nandoai.com:3003
 HTTPS_PUBLISH_PORT=3003
 GCS_BUCKET=your-gcs-bucket-name
 ```
+
+`FRAPPE_SITE_NAME_HEADER` must match the Frappe site name. Keep the port out of
+that value. `FRAPPE_HOST_NAME` is the public URL Frappe uses when generating
+absolute links in emails, login URLs, and redirects.
 
 If you want to bundle a private custom app into the image, also add:
 
@@ -198,6 +203,10 @@ resolved file.
 
 **Re-run this command every time you change `erpnext.env` or any compose file
 without using `./nando-deployment/build-custom-image.sh`.**
+
+The configurator writes `FRAPPE_HOST_NAME` to Frappe's persistent
+`host_name` config. This keeps generated URLs on
+`https://apps.internal.nandoai.com:3003` without changing the site name.
 
 ## Step 6 — Deploy the stack
 

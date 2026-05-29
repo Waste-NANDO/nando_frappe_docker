@@ -34,7 +34,7 @@ CUSTOM_APP_REPO="${CUSTOM_APP_REPO:-git@github.com:Waste-NANDO/nando-erpnext-mod
 CUSTOM_APP_BRANCH="${CUSTOM_APP_BRANCH:-}"
 CUSTOM_IMAGE="${CUSTOM_IMAGE:-nando-erpnext-custom}"
 CUSTOM_TAG="${CUSTOM_TAG:-${ERPNEXT_VERSION}-custom}"
-FRAPPE_BRANCH="${FRAPPE_BRANCH:-${ERPNEXT_VERSION}}"
+FRAPPE_BRANCH="${FRAPPE_BRANCH:-version-16}"
 
 render_compose() {
   docker compose --project-name "${COMPOSE_PROJECT_NAME}" \

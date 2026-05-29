@@ -1,238 +1,152 @@
 # NandoAI ERPNext Deployment Guide
 
-Production deployment of Frappe + ERPNext at `https://apps.internal.nandoai.com:3003`.
+Two isolated Frappe/ERPNext stacks on one server:
+
+| Stack | URL | Compose project | Purpose |
+|-------|-----|-----------------|--------|
+| **Dev** | `https://apps.internal.nandoai.com:3003` | `erpnext` | Custom app, Desk customizations, test data |
+| **Main** | `https://apps.internal.nandoai.com:3000` | `erpnext-main` | Stock ERPNext, fresh site (no custom app yet) |
+
+Both use the same hostname and Frappe site name (`apps.internal.nandoai.com`). Isolation is by **port**, **Compose project**, and **separate volumes** (MariaDB + `sites`).
+
+Canonical ops reference for this repo. Upstream Frappe Docker docs live under [`docs/`](docs/).
 
 ## Architecture
 
 ```
-Browser (VPC) → https://apps.internal.nandoai.com:3003
-                         │
-                   Traefik (TLS termination, private CA certs)
-                         │
-                   Frontend/Nginx (:8080 internal)
-                    │              │
-              Backend:8000    WebSocket:9000
-                    │
-              MariaDB + Redis (internal)
-              Workers + Scheduler (background)
+Browser :3003  →  Traefik (project erpnext)       →  frontend → backend → MariaDB (erpnext_db-data)
+Browser :3000  →  Traefik (project erpnext-main) →  frontend → backend → MariaDB (erpnext-main_db-data)
 ```
 
-Single Docker Compose stack. Traefik terminates TLS using your private CA
-certificate (`nando-erp-server.crt`) and key (`key.pem`), then forwards to
-the internal Nginx frontend. All other services are internal only.
+Each stack has its own Traefik, Redis, workers, scheduler, and backup sidecar. Traefik is constrained to its Compose project via Docker labels (see [Traefik isolation](#traefik-isolation)).
 
-## File Layout
+## File layout
 
 ```
 nando-deployment/
-├── certs/
-│   ├── .gitkeep
-│   ├── traefik-tls.yml           # Traefik dynamic TLS config (committed)
-│   ├── key.pem                   # Private key (gitignored, add manually)
-│   └── nando-erp-server.crt      # Certificate chain (gitignored, add manually)
-├── compose.custom-tls.yaml       # Traefik + TLS compose override
-├── compose.backup.yaml           # GCS backup sidecar compose override
-├── backup-to-gcs.sh              # Backup entrypoint script (runs inside container)
-├── upload-to-gcs.py              # GCS upload + pruning logic
-├── rd-devops-prod-...-sa.json    # GCS service account key (gitignored, add manually)
-├── erpnext.env                   # Environment variables (edit passwords!)
-└── erpnext.yaml                  # Resolved compose file (gitignored, generated)
+├── certs/                    # TLS (key.pem, nando-erp-server.crt — gitignored)
+├── compose.custom-tls.yaml   # Traefik + per-project routing
+├── compose.backup.yaml       # GCS backup sidecar
+├── erpnext-dev.env           # Dev configuration (edit passwords on server)
+├── erpnext-main.env          # Main configuration
+├── erpnext.env                 # Legacy dev alias (scripts still accept it)
+├── erpnext.yaml                # Generated dev compose (gitignored — contains secrets)
+├── erpnext-main.yaml           # Generated main compose (gitignored)
+├── build-custom-image.sh       # Build dev image + render dev compose
+├── render-compose.sh           # Render compose only (main or after env edits)
+├── fetch-custom-app.sh         # Clone/update custom app (dev only)
+├── resolve-env.sh              # Shared env file resolution
+├── docker_commands.md          # Quick command reference
+└── README.md                   # Index of scripts and env files
 ```
 
 ## Prerequisites
 
-- Docker Engine and Docker Compose v2 installed on the remote machine
-- SSH access to the remote machine
-- Your private CA files: `key.pem` and `nando-erp-server.crt`
+- Docker Engine and Docker Compose v2
+- Private CA files in `nando-deployment/certs/`: `key.pem`, `nando-erp-server.crt`
+- For dev custom app build: SSH agent with GitHub deploy key for `nando-erpnext-module`
 
-## Step 1 — Install Docker
+## Environment files
 
-If Docker is not already installed on the remote machine:
+Edit on the server (never commit real passwords). Templates are committed with `CHANGE_ME_*` placeholders.
 
-```bash
-curl -fsSL https://get.docker.com | bash
-```
+### Dev — `nando-deployment/erpnext-dev.env`
 
-Verify:
+| Variable | Typical value |
+|----------|----------------|
+| `COMPOSE_PROJECT_NAME` | `erpnext` (keeps existing `erpnext_*` volumes) |
+| `COMPOSE_FILE_OUTPUT` | `nando-deployment/erpnext.yaml` |
+| `HTTPS_PUBLISH_PORT` | `3003` |
+| `FRAPPE_HOST_NAME` | `https://apps.internal.nandoai.com:3003` |
+| `INCLUDE_CUSTOM_APP` | `yes` |
+| `APP_NAME` | `nando-erp-dev` (GCS backup path prefix) |
+| `TRAEFIK_ROUTER_PREFIX` | `erpnext` |
+| `TRAEFIK_HOST_RULE` | `'Host(\`apps.internal.nandoai.com\`)'` |
 
-```bash
-docker --version
-docker compose version
-```
+### Main — `nando-deployment/erpnext-main.env`
 
-## Step 2 — Clone the repo
+| Variable | Typical value |
+|----------|----------------|
+| `COMPOSE_PROJECT_NAME` | `erpnext-main` |
+| `COMPOSE_FILE_OUTPUT` | `nando-deployment/erpnext-main.yaml` |
+| `HTTPS_PUBLISH_PORT` | `3000` |
+| `FRAPPE_HOST_NAME` | `https://apps.internal.nandoai.com:3000` |
+| `INCLUDE_CUSTOM_APP` | `no` |
+| `CUSTOM_IMAGE` / `CUSTOM_TAG` | `frappe/erpnext` / `v16.5.0` |
+| `APP_NAME` | `nando-erp-main` |
+| `DB_PASSWORD` | **Different** from dev |
 
-```bash
-git clone <your-repo-url> ~/frappe_docker
-cd ~/frappe_docker
-```
+### Legacy `erpnext.env`
 
-## Step 3 — Add your certificates
+Same shape as `erpnext-dev.env`. Scripts prefer `erpnext-dev.env` when no file argument is passed; `erpnext.env` still works with a deprecation note.
 
-Copy your private CA certificate files into the certs directory:
+## Generated compose files (security)
 
-```bash
-cp /path/to/key.pem nando-deployment/certs/key.pem
-cp /path/to/nando-erp-server.crt nando-deployment/certs/nando-erp-server.crt
-```
+`docker compose config` writes **inlined secrets** (e.g. `DB_PASSWORD`) into `erpnext.yaml` and `erpnext-main.yaml`.
 
-Verify:
-
-```bash
-ls -la nando-deployment/certs/
-# Should show: key.pem  nando-erp-server.crt  traefik-tls.yml  .gitkeep
-```
-
-## Step 4 — Set passwords
-
-Edit the environment file:
-
-```bash
-nano nando-deployment/erpnext.env
-```
-
-Change `CHANGE_ME_DB_PASSWORD` to a strong password. This will be the MariaDB
-root password and the password used during site creation.
-
-The file should look like:
-
-```env
-ERPNEXT_VERSION=v16.5.0
-DB_PASSWORD=your_strong_db_password_here
-FRAPPE_SITE_NAME_HEADER=apps.internal.nandoai.com
-FRAPPE_HOST_NAME=https://apps.internal.nandoai.com:3003
-HTTPS_PUBLISH_PORT=3003
-GCS_BUCKET=your-gcs-bucket-name
-```
-
-`FRAPPE_SITE_NAME_HEADER` must match the Frappe site name. Keep the port out of
-that value. `FRAPPE_HOST_NAME` is the public URL Frappe uses when generating
-absolute links in emails, login URLs, and redirects.
-
-If you want to bundle a private custom app into the image, also add:
-
-```env
-CUSTOM_APP_REPO=git@github.com:Waste-NANDO/nando-erpnext-module.git
-CUSTOM_APP_BRANCH=
-CUSTOM_APP_NAME=replace_with_actual_app_name
-CUSTOM_IMAGE=nando-erpnext-custom
-CUSTOM_TAG=v16.5.0-custom
-PULL_POLICY=never
-```
-
-Leave `CUSTOM_APP_BRANCH` blank to use the repository default branch. Set
-`CUSTOM_APP_NAME` to the app's installable bench name, which is often different
-from the GitHub repository name.
-
-## Optional — Build a custom app image
-
-Yes, you really do want a custom image for this. The recommended production
-pattern is:
-
-1. Start from the standard ERPNext image build
-2. Add your custom app to that image
-3. Deploy the resulting custom image
-
-Do **not** install the app into a running container and expect it to persist
-across container recreation.
-
-This repo now uses a two-step custom app workflow:
-
-1. Fetch or update the private app into `nando-deployment/custom-app-src/`
-2. Build an image that clones the app from that local checkout during
-   `bench init`
-
-This avoids GitHub auth issues during `docker build` while keeping the final
-deployment image immutable and reproducible.
-
-The fetch step needs the GitHub deploy key loaded in your server's `ssh-agent`.
-
-Verify the key is loaded:
+- Both files are **gitignored** — never commit them.
+- Regenerate after any env or compose change.
 
 ```bash
-ssh-add -l
+./nando-deployment/render-compose.sh nando-deployment/erpnext-main.env
+# or for dev after image build:
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ```
 
-If it is not, start an agent and add the key:
+## Traefik isolation
+
+Each stack runs its own Traefik container bound to a different host port. [`compose.custom-tls.yaml`](nando-deployment/compose.custom-tls.yaml) configures:
+
+1. **Docker provider constraint** — only containers from the same Compose project:
+   `Label(\`com.docker.compose.project\`,\`<COMPOSE_PROJECT_NAME>\`)`
+2. **Unique router names** — `TRAEFIK_ROUTER_PREFIX` (e.g. `erpnext-https` vs `erpnext-main-https`)
+3. **Host rule** — `TRAEFIK_HOST_RULE` (default `Host(\`apps.internal.nandoai.com\`)`)
+
+Two Traefik processes on one host is expected. Unrelated containers on the host may still appear in Traefik logs (harmless if constraints are correct).
+
+## Same hostname and browser cookies
+
+Session cookies are scoped by **domain**, not port. Using dev (`:3003`) and main (`:3000`) in the **same browser profile** can confuse or overwrite sessions.
+
+Mitigations:
+
+- Separate browser profiles (e.g. “ERP Dev” vs “ERP Main”)
+- Different browsers per stack
+- Private/incognito when switching
+- Log out before switching ports
+- Bookmark full URLs including the port
+
+## Dev deployment
+
+### 1. Configure env
+
+```bash
+nano nando-deployment/erpnext-dev.env
+# Set DB_PASSWORD, GCS_BUCKET, CUSTOM_APP_* as needed
+```
+
+### 2. Build image and render compose
 
 ```bash
 eval "$(ssh-agent -s)"
 ssh-add ~/.ssh/<github-key>
+
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ```
 
-Fetch the app checkout:
+This fetches `custom-app-src`, builds `nando-erpnext-custom:<tag>`, and writes `nando-deployment/erpnext.yaml`.
 
-```bash
-./nando-deployment/fetch-custom-app.sh
-```
-
-Then build the image from the repo root:
-
-```bash
-./nando-deployment/build-custom-image.sh
-```
-
-This reads `nando-deployment/erpnext.env`, builds
-`nando-erpnext-custom:v16.5.0-custom` by default, and uses the local checkout
-in `nando-deployment/custom-app-src/` instead of reaching back to GitHub during
-the image build. It also regenerates `nando-deployment/erpnext.yaml` after a
-successful build.
-
-## Step 5 — Generate the resolved compose file
-
-From the repo root:
-
-```bash
-sudo docker compose --project-name erpnext \
-  --env-file nando-deployment/erpnext.env \
-  -f compose.yaml \
-  -f overrides/compose.redis.yaml \
-  -f overrides/compose.mariadb.yaml \
-  -f nando-deployment/compose.custom-tls.yaml \
-  -f nando-deployment/compose.backup.yaml \
-  config | sudo tee nando-deployment/erpnext.yaml > /dev/null
-```
-
-This merges all compose layers (including the GCS backup sidecar) into a single
-resolved file.
-
-> **Note:** We use `| sudo tee ... > /dev/null` instead of `>` because the
-> shell redirect `>` runs as your user and may not have write permissions to
-> the directory. `sudo tee` writes the file with root permissions.
-> Alternatively, fix ownership once with `sudo chown -R $(whoami):$(whoami) nando-deployment/`.
-
-**Re-run this command every time you change `erpnext.env` or any compose file
-without using `./nando-deployment/build-custom-image.sh`.**
-
-The configurator writes `FRAPPE_HOST_NAME` to Frappe's persistent
-`host_name` config. This keeps generated URLs on
-`https://apps.internal.nandoai.com:3003` without changing the site name.
-
-## Step 6 — Deploy the stack
+### 3. Deploy
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
 ```
 
-Watch logs to ensure everything starts:
+### 4. Site (existing or new)
 
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f
-```
+Existing server with site already created — skip `new-site`.
 
-Wait for the `configurator` service to exit with code 0. The other services
-(backend, frontend, websocket, workers, scheduler, db, redis) should settle
-into a running state.
-
-Press `Ctrl+C` to stop following logs.
-
-Verify all services are up:
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml ps
-```
-
-## Step 7 — Create the ERPNext site
+New site:
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
@@ -245,352 +159,199 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec
     apps.internal.nandoai.com
 ```
 
-Replace `YOUR_DB_PASSWORD` with the password you set in `erpnext.env`.
-Replace `YOUR_ADMIN_PASSWORD` with the password you want for the ERPNext admin user.
-
-> **Important:** Always wrap passwords in **single quotes** (`'...'`).
-> Double quotes or unquoted passwords will break if they contain `!`, `$`,
-> or other special characters that bash interprets.
-
-When prompted `Enter mysql super user [root]:`, just press **Enter** to
-accept the default (`root`).
-
-If you need to re-create the site (e.g. after a failed first attempt), add
-`--force` to drop and recreate:
+Install custom app once:
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+  bench --site apps.internal.nandoai.com install-app nando_fulfillment
+```
+
+### 5. Enable Server Scripts (dev)
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+  bench set-config -g server_script_enabled 1
+
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml restart backend
+```
+
+## Main deployment
+
+### 1. Configure env
+
+```bash
+nano nando-deployment/erpnext-main.env
+# Set CHANGE_ME_MAIN_DB_PASSWORD, GCS_BUCKET
+```
+
+### 2. Render compose (no custom image build)
+
+```bash
+./nando-deployment/render-compose.sh nando-deployment/erpnext-main.env
+```
+
+### 3. Firewall
+
+Allow **TCP 3000** from your VPC (same pattern as 3003).
+
+### 4. Deploy
+
+```bash
+sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
+```
+
+### 5. Create empty site (ERPNext only)
+
+```bash
+sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench new-site \
     --mariadb-user-host-login-scope='%' \
-    --db-root-password 'YOUR_DB_PASSWORD' \
+    --db-root-password 'YOUR_MAIN_DB_PASSWORD' \
     --install-app erpnext \
     --admin-password 'YOUR_ADMIN_PASSWORD' \
-    --force \
     --set-default \
     apps.internal.nandoai.com
 ```
 
-This takes a few minutes — it creates the database, runs migrations, and
-installs ERPNext.
+No `install-app` for the custom app on main until you enable it (see [Promoting customizations](#promoting-customizations-to-main)).
 
-## Optional — Install the custom app on the site
-
-Building the image only makes the app code available inside the containers. You
-still need to install it on the site once:
+### 6. Verify
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
-  bench --site apps.internal.nandoai.com install-app YOUR_CUSTOM_APP_NAME
+curl -k https://apps.internal.nandoai.com:3000
 ```
 
-Replace `YOUR_CUSTOM_APP_NAME` with the value you set in `CUSTOM_APP_NAME`.
+## Operating both stacks
 
-## Step 8 — Verify
+See [`nando-deployment/docker_commands.md`](nando-deployment/docker_commands.md).
 
-From a machine inside your VPC:
+| Action | Dev | Main |
+|--------|-----|------|
+| Up | `compose -p erpnext -f nando-deployment/erpnext.yaml up -d` | `compose -p erpnext-main -f nando-deployment/erpnext-main.yaml up -d` |
+| Down | same with `down` | same with `down` |
+| Logs | `logs -f backend` | `logs -f backend` |
+| Bench | `exec backend bench --site apps.internal.nandoai.com …` | same on main yaml |
 
-```bash
-curl -k https://apps.internal.nandoai.com:3003
-```
+**Never** run `docker compose down -v` in production (destroys volumes).
 
-(`-k` skips cert verification. If the machine trusts your private CA, drop `-k`.)
+## Custom app workflow (dev)
 
-You should see the Frappe login page HTML. Log in via browser at:
+1. Set `CUSTOM_APP_BRANCH` in `erpnext-dev.env` if needed (e.g. `develop`).
+2. `./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-dev.env`
+3. Bump `CUSTOM_TAG`, rebuild: `./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env`
+4. Redeploy dev stack.
+5. `bench --site apps.internal.nandoai.com migrate`
 
-```
-https://apps.internal.nandoai.com:3003
-```
+App code must live in the **image** (`apps.json` at build time), not only inside a running container.
 
-- **Username:** `Administrator`
-- **Password:** the admin password you set in Step 7
+## Promoting customizations to main
+
+Dev Desk changes (Custom Fields, Server Scripts, etc.) live in the **dev database**. They do not copy to main automatically.
+
+**Recommended path:**
+
+1. Add fixture types to `hooks.py` in `nando-erpnext-module`:
+
+   ```python
+   fixtures = [
+       "Custom Field",
+       "Property Setter",
+       "Custom Script",
+       "Client Script",
+       "Server Script",
+   ]
+   ```
+
+2. On dev:
+
+   ```bash
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+     bench --site apps.internal.nandoai.com export-fixtures
+   ```
+
+3. Commit fixture JSON in the custom app repo; merge branch (`develop` → `main`).
+
+4. When ready on main: set `INCLUDE_CUSTOM_APP=yes` in `erpnext-main.env`, rebuild image, `install-app nando_fulfillment`, `migrate` / `import-fixtures`.
+
+Transactional data (customers, orders, stock) requires explicit export/import — not fixtures.
 
 ## Backups
 
-### Manual backup
+Backup sidecar uses `APP_NAME` and `ERPNEXT_VERSION` for GCS paths:
+
+`gs://<GCS_BUCKET>/<APP_NAME>/<ERPNEXT_VERSION>/<timestamp>/`
+
+- Dev: `APP_NAME=nando-erp-dev`
+- Main: `APP_NAME=nando-erp-main`
+
+Optional override: set `GCS_PREFIX` in the env file (see [`compose.backup.yaml`](nando-deployment/compose.backup.yaml)).
+
+Manual backup:
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
   bench --site apps.internal.nandoai.com backup --with-files
 ```
 
-### Automated backup to GCS
+## Upgrades
 
-The stack includes a `backup` sidecar container that runs inside Docker
-alongside the other services. It uses the same ERPNext image and has direct
-access to the `sites` volume — no `docker exec` or `docker cp` needed.
+### Dev (custom image)
 
-**What it does (every 7 days):**
+1. Update `ERPNEXT_VERSION` and `CUSTOM_TAG` in `erpnext-dev.env`
+2. `./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-dev.env`
+3. `./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env`
+4. `docker compose … up -d`
+5. `bench --site apps.internal.nandoai.com migrate`
 
-1. Runs `bench --site <site> backup --with-files`
-2. Uploads the DB dump + file tarballs to `gs://<bucket>/<site>/<timestamp>/`
-3. Prunes old backups in GCS, keeping only the latest 10
-4. Cleans up local backup files to save disk space
+### Main (official image)
 
-**Setup:**
+1. Update `ERPNEXT_VERSION` / `CUSTOM_TAG` in `erpnext-main.env`
+2. `./nando-deployment/render-compose.sh nando-deployment/erpnext-main.env`
+3. `docker compose … pull` (if `PULL_POLICY` allows) and `up -d`
+4. `bench --site apps.internal.nandoai.com migrate`
 
-1. Place the GCS service account key on the host:
+## Migrating an existing single-stack server
 
-```bash
-ls nando-deployment/rd-devops-prod-relearn-0a64b79e2a62-erpnext-sa.json
-```
+If you already run project `erpnext` on port 3003:
 
-2. Add `GCS_BUCKET` to `nando-deployment/erpnext.env`:
+1. Copy `erpnext.env` → `erpnext-dev.env` (or use the committed template + your passwords).
+2. Ensure `COMPOSE_PROJECT_NAME=erpnext` and `HTTPS_PUBLISH_PORT=3003`.
+3. Rebuild/render with Traefik constraints: `./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env`
+4. Redeploy: `compose -p erpnext -f nando-deployment/erpnext.yaml up -d` — volumes unchanged.
+5. Bootstrap main separately (new project `erpnext-main`, port 3000).
 
-```env
-GCS_BUCKET=your-gcs-bucket-name
-```
+## Future: HRMS (Frappe HR)
 
-3. Re-run Step 5 to regenerate the resolved compose file (the backup compose
-   layer is already included in the generation command).
+Not included yet. When adding:
 
-4. Deploy:
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
-```
-
-The backup service starts automatically. Check its logs:
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f backup
-```
-
-**Configuration (via `erpnext.env`):**
-
-| Variable | Default | Description |
-|---|---|---|
-| `GCS_BUCKET` | *(required)* | GCS bucket name |
-| `BACKUP_KEEP` | `10` | Number of backup sets to retain in GCS |
-| `BACKUP_INTERVAL_SECONDS` | `604800` | Seconds between backups (default: 7 days) |
-
-**Required IAM permissions** on the service account:
-`roles/storage.objectAdmin` on the target bucket (or at minimum
-`storage.objects.create`, `storage.objects.delete`, `storage.objects.list`).
-
-## Common Operations
-
-### Stop the stack
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml down
-```
-
-### Restart the stack
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
-```
-
-### View logs (specific service)
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f backend
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f proxy
-```
-
-### Run bench commands
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
-  bench --site apps.internal.nandoai.com [command]
-```
-
-### Migrate after ERPNext version update
-
-1. Update `ERPNEXT_VERSION` in `nando-deployment/erpnext.env`
-2. If you use a custom app image, update `CUSTOM_TAG` too, then refresh the app checkout and rebuild it:
-
-```bash
-./nando-deployment/fetch-custom-app.sh
-./nando-deployment/build-custom-image.sh
-```
-
-3. Re-run Step 5 to regenerate the resolved compose file
-4. Restart the stack:
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
-```
-
-If you are still using the official `frappe/erpnext` image, pull before restart:
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml pull
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
-```
-
-5. Run migration:
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
-  bench --site apps.internal.nandoai.com migrate
-```
-
-### Update only the custom app from GitHub
-
-When the custom app repository changes and you want to deploy a new version:
-
-1. If needed, change `CUSTOM_APP_BRANCH` in `nando-deployment/erpnext.env`
-2. Bump `CUSTOM_TAG` in `nando-deployment/erpnext.env` so Compose sees a new image version
-3. Refresh the local checkout and rebuild the image:
-
-```bash
-./nando-deployment/fetch-custom-app.sh
-./nando-deployment/build-custom-image.sh
-```
-
-4. Re-run Step 5 to regenerate the resolved compose file
-5. Redeploy:
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
-```
-
-6. Run migration:
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
-  bench --site apps.internal.nandoai.com migrate
-```
-
-### Open a shell in the backend container
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend bash
-```
+1. Add `hrms` to `apps.json` in `build-custom-image.sh` (branch `version-16`, pin v16.1.0+ for Frappe 16 compatibility).
+2. Rebuild dev image; `bench install-app hrms` on the target site.
+3. Enable on main only when ready (same `INCLUDE_CUSTOM_APP` / fixture promotion pattern).
 
 ## Troubleshooting
 
-### Site not resolving
+### Site 404
 
-If you get "404 not found" from Frappe, the site name doesn't match. Check:
+`FRAPPE_SITE_NAME_HEADER` must match the site folder name under `sites/`.
 
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
-  bench --site apps.internal.nandoai.com list-apps
-```
-
-If it fails, the site name is wrong. The `FRAPPE_SITE_NAME_HEADER` in
-`erpnext.env` must match the site name you created in Step 7.
-
-### Traefik not picking up certs
-
-Check Traefik logs:
+### Traefik / certs
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs proxy
-```
-
-Verify certs are readable inside the container:
-
-```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec proxy ls -la /certs/
 ```
 
-### MariaDB not starting
+### Wrong stack answering
 
-Check DB logs:
+Check Traefik constraint in generated yaml: `com.docker.compose.project` must match `COMPOSE_PROJECT_NAME`.
 
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs db
-```
+### Passwords in shell
 
-### Volumes and data safety
+Always use **single quotes** for `bench new-site` passwords (`'My!Pass'`).
 
-- `docker compose down` preserves volumes (data safe)
-- `docker compose down -v` **destroys volumes** (data lost) — never use this in production
+### Gotchas (from first deployment)
 
-### Traefik errors about other containers
-
-If you see Traefik errors like `Router uses a nonexistent certificate resolver`
-or `error while parsing rule` referencing services you didn't deploy (e.g. CVAT),
-this is because Traefik discovers **all** Docker containers on the host via the
-Docker socket. It tries to parse their labels and complains about invalid ones.
-These errors are harmless and don't affect the ERPNext deployment.
-
-## Gotchas & Lessons Learned
-
-Things that tripped us up during the first deployment (2026-02-17):
-
-### 1. File permissions on the remote machine
-
-The `>` shell redirect runs as your user, not as root. So
-`sudo docker compose ... config > file` fails with "Permission denied"
-because the redirect is handled by your shell before `sudo` kicks in.
-
-**Fix:** Use `sudo docker compose ... config | sudo tee file > /dev/null`
-or fix directory ownership with `sudo chown -R $(whoami):$(whoami) nando-deployment/`.
-
-### 2. Special characters in passwords break bash
-
-Passwords containing `!`, `$`, backticks, or other shell metacharacters
-will be interpreted by bash if passed in double quotes or unquoted.
-For example, `--admin-password My!Pass` causes `-bash: !Pass: event not found`.
-
-**Fix:** Always wrap passwords in **single quotes**: `--admin-password 'My!Pass'`.
-
-### 3. "Site already exists" after a failed creation
-
-If `bench new-site` partially runs (e.g. you `Ctrl+C` or hit a password
-parsing error), the site may be in a half-created state. Re-running the
-same command gives `Site already exists`.
-
-**Fix:** Add `--force` to the `bench new-site` command to drop and recreate.
-
-### 4. MySQL super user prompt
-
-During `bench new-site`, you'll be prompted:
-`Enter mysql super user [root]:`. This is asking for the **username**,
-not a password. Just press **Enter** to accept the default `root`.
-
-### 5. Firewall / security group for the port
-
-`curl` from the server itself works, but browsers from VPN clients can't
-reach the port. This means the cloud firewall (GCP/AWS/Azure security
-group) is blocking inbound traffic on port 3003.
-
-**Fix:** Add a firewall rule allowing TCP port 3003 inbound from your
-VPC CIDR range (e.g. `10.0.0.0/8`). Verify the port is listening first:
-`sudo ss -tlnp | grep 3003`.
-
-### 6. Default admin login
-
-The admin username is `Administrator` (capital A, full word) — not
-`admin` or `Admin`.
-
-## Enable Server Scripts
-
-Server Scripts (Python in DocType / System Console) are off by default. Turn
-them on with a **global** bench config flag (writes
-`sites/common_site_config.json` on the sites volume — it **persists** across
-container restarts and image upgrades).
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
-  bench set-config -g server_script_enabled 1
-```
-
-Restart so app processes reload config. **Minimal downtime** — only the
-backend (add other services if you split workers/scheduler):
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml restart backend
-```
-
-**Full stack recycle** — detached (`-d`); restarts every service (DB, Redis,
-proxy, workers, etc.), so expect a longer blip:
-
-```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml down
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
-```
-
-Plain `down` keeps volumes (your site data and `common_site_config.json` stay).
-Do **not** use `down -v` in production.
-
-You do not need a separate repo config file unless you intentionally manage
-`common_site_config.json` yourself; `bench set-config -g` is the usual approach.
-
-**Security:** Server Scripts execute Python with site privileges. Only enable
-this if you trust everyone who can create or edit server scripts, and keep
-ERPNext patched.
+- Use `sudo docker compose … config | sudo tee file` if redirect permission fails
+- `bench new-site` “Site already exists” → `--force` to recreate
+- MySQL prompt `Enter mysql super user [root]:` → press Enter
+- Admin user is `Administrator` (capital A)

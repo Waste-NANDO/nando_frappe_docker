@@ -5,6 +5,26 @@
 
 Docker images and orchestration for Frappe applications.
 
+## NandoAI deployment
+
+This fork includes a production-style **dual-stack** setup under [`nando-deployment/`](nando-deployment/):
+
+| Stack | URL | Env file |
+|-------|-----|----------|
+| Dev (custom app, test data) | `https://apps.internal.nandoai.com:3003` | [`erpnext-dev.env`](nando-deployment/erpnext-dev.env) |
+| Main (stock ERPNext, fresh site) | `https://apps.internal.nandoai.com:3000` | [`erpnext-main.env`](nando-deployment/erpnext-main.env) |
+
+Full guide: **[DEPLOYMENT.md](DEPLOYMENT.md)** — bootstrap, Traefik isolation, cookies, backups, fixture promotion.
+
+Quick scripts:
+
+```bash
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env   # dev image + erpnext.yaml
+./nando-deployment/render-compose.sh nando-deployment/erpnext-main.env      # main erpnext-main.yaml
+```
+
+Generated `erpnext.yaml` / `erpnext-main.yaml` are gitignored (they contain inlined secrets).
+
 ## What is this?
 
 This repository handles the containerization of the Frappe stack, including the application server, database, Redis, and supporting services. It provides quick disposable demo setups, a development environment, production-ready Docker images and compose configurations for deploying Frappe applications including ERPNext.

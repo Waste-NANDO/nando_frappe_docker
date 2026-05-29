@@ -2,18 +2,22 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${1:-${SCRIPT_DIR}/erpnext.env}"
-TARGET_DIR="${SCRIPT_DIR}/custom-app-src"
+# shellcheck source=resolve-env.sh
+source "${SCRIPT_DIR}/resolve-env.sh"
 
-if [[ ! -f "${ENV_FILE}" ]]; then
-  echo "Env file not found: ${ENV_FILE}" >&2
-  exit 1
-fi
+ENV_FILE="$(resolve_env_file "${SCRIPT_DIR}" "${1:-}")"
+TARGET_DIR="${SCRIPT_DIR}/custom-app-src"
 
 set -a
 # shellcheck disable=SC1090
 source "${ENV_FILE}"
 set +a
+
+INCLUDE_CUSTOM_APP="${INCLUDE_CUSTOM_APP:-yes}"
+if ! include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
+  echo "INCLUDE_CUSTOM_APP=${INCLUDE_CUSTOM_APP} — skipping custom app fetch (${ENV_FILE})."
+  exit 0
+fi
 
 CUSTOM_APP_REPO="${CUSTOM_APP_REPO:-git@github.com:Waste-NANDO/nando-erpnext-module.git}"
 CUSTOM_APP_BRANCH="${CUSTOM_APP_BRANCH:-}"

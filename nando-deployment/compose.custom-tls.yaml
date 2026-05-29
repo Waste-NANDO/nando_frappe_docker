@@ -2,10 +2,11 @@ services:
   frontend:
     labels:
       - traefik.enable=true
-      - traefik.http.services.frontend.loadbalancer.server.port=8080
-      - traefik.http.routers.frontend-https.entrypoints=websecure
-      - traefik.http.routers.frontend-https.rule=HostRegexp(`^.+$$`)
-      - traefik.http.routers.frontend-https.tls=true
+      - traefik.http.services.${TRAEFIK_ROUTER_PREFIX:-erpnext}-frontend.loadbalancer.server.port=8080
+      - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-erpnext}-https.entrypoints=websecure
+      - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-erpnext}-https.rule=${TRAEFIK_HOST_RULE:-HostRegexp(`^.+$$`)}
+      - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-erpnext}-https.tls=true
+      - traefik.http.routers.${TRAEFIK_ROUTER_PREFIX:-erpnext}-https.service=${TRAEFIK_ROUTER_PREFIX:-erpnext}-frontend
 
   proxy:
     image: traefik:v3.6
@@ -13,6 +14,7 @@ services:
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
+      - --providers.docker.constraints=Label(`com.docker.compose.project`,`${COMPOSE_PROJECT_NAME:-erpnext}`)
       - --providers.file.directory=/traefik-config
       - --providers.file.watch=true
       - --entrypoints.websecure.address=:443

@@ -320,13 +320,83 @@ If you already run project `erpnext` on port 3003:
 4. Redeploy: `compose -p erpnext -f nando-deployment/erpnext.yaml up -d` — volumes unchanged.
 5. Bootstrap main separately (new project `erpnext-main`, port 3000).
 
-## Future: HRMS (Frappe HR)
+## Frappe HRMS
 
-Not included yet. When adding:
+HRMS is baked into the image when `INCLUDE_HRMS=yes` in the env file ([`build-custom-image.sh`](nando-deployment/build-custom-image.sh) adds `frappe/hrms` to `apps.json`). Install on each **site** once with `bench install-app hrms`.
 
-1. Add `hrms` to `apps.json` in `build-custom-image.sh` (branch `version-16`, pin v16.1.0+ for Frappe 16 compatibility).
-2. Rebuild dev image; `bench install-app hrms` on the target site.
-3. Enable on main only when ready (same `INCLUDE_CUSTOM_APP` / fixture promotion pattern).
+| Stack | Image contents | Env file |
+|-------|----------------|----------|
+| Dev | ERPNext + custom app + HRMS | `erpnext-dev.env` |
+| Main | ERPNext + HRMS (no custom app yet) | `erpnext-main.env` |
+
+Env variables:
+
+```env
+INCLUDE_HRMS=yes
+HRMS_BRANCH=version-16
+```
+
+Use HRMS on branch `version-16` with ERPNext v16.5.x (v16.1.0+ on the HRMS branch avoids early v16 Frappe 17 dependency issues).
+
+### Users and data between stacks
+
+Dev and main do **not** share users, employees, or HR records. Each stack has its own database. Install HRMS on both sites separately; configure employees/users on each environment as needed.
+
+### Rollout on dev (`:3003`)
+
+1. Set `INCLUDE_HRMS=yes` and bump `CUSTOM_TAG` in `erpnext-dev.env` (e.g. `v16.5.0-custom-hrms`).
+2. Build and redeploy:
+
+```bash
+sudo ./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-dev.env
+sudo ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+```
+
+3. Install HRMS on the existing site:
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+  bench --site apps.internal.nandoai.com install-app hrms
+
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+  bench --site apps.internal.nandoai.com migrate
+```
+
+### Rollout on main (`:3000`)
+
+1. Set in `erpnext-main.env`: `INCLUDE_HRMS=yes`, `CUSTOM_IMAGE=nando-erpnext-main`, `CUSTOM_TAG=v16.5.0-hrms`, `PULL_POLICY=never`.
+2. Build and redeploy (no custom app fetch):
+
+```bash
+sudo ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-main.env
+sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
+```
+
+3. Install HRMS:
+
+```bash
+sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+  bench --site apps.internal.nandoai.com install-app hrms
+
+sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+  bench --site apps.internal.nandoai.com migrate
+```
+
+4. Enable scheduler on main if needed: `bench --site apps.internal.nandoai.com enable-scheduler`.
+
+### Verify
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+  bench --site apps.internal.nandoai.com list-apps
+# expect hrms among installed apps
+
+sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+  bench --site apps.internal.nandoai.com list-apps
+```
+
+HR workspaces should appear in Desk on both ports after install.
 
 ## Troubleshooting
 

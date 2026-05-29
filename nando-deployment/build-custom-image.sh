@@ -27,6 +27,9 @@ if [[ "${COMPOSE_FILE_OUTPUT}" != /* ]]; then
 fi
 
 INCLUDE_CUSTOM_APP="${INCLUDE_CUSTOM_APP:-yes}"
+INCLUDE_HRMS="${INCLUDE_HRMS:-no}"
+HRMS_REPO="${HRMS_REPO:-https://github.com/frappe/hrms.git}"
+HRMS_BRANCH="${HRMS_BRANCH:-version-16}"
 CUSTOM_APP_REPO="${CUSTOM_APP_REPO:-git@github.com:Waste-NANDO/nando-erpnext-module.git}"
 CUSTOM_APP_BRANCH="${CUSTOM_APP_BRANCH:-}"
 CUSTOM_IMAGE="${CUSTOM_IMAGE:-nando-erpnext-custom}"
@@ -44,38 +47,63 @@ render_compose() {
     config > "${COMPOSE_FILE_OUTPUT}"
 }
 
-if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
-  if [[ ! -x "${FETCH_SCRIPT}" ]]; then
-    echo "Fetch script is missing or not executable: ${FETCH_SCRIPT}" >&2
-    exit 1
-  fi
+write_apps_json() {
+  local outfile="$1"
 
-  "${FETCH_SCRIPT}" "${ENV_FILE}"
+  {
+    echo '['
+    echo '  {'
+    echo '    "url": "https://github.com/frappe/erpnext.git",'
+    echo "    \"branch\": \"${ERPNEXT_VERSION}\""
+    echo -n '  }'
 
-  if [[ ! -d "${LOCAL_APP_DIR}/.git" ]]; then
-    echo "Local custom app checkout is missing: ${LOCAL_APP_DIR}" >&2
-    exit 1
+    if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
+      local custom_branch_line=""
+      if [[ -n "${CUSTOM_APP_BRANCH}" ]]; then
+        custom_branch_line=$',\n    "branch": "'"${CUSTOM_APP_BRANCH}"'"'
+      fi
+      echo ','
+      echo '  {'
+      echo '    "url": "file:///opt/frappe/custom-app-src"'"${custom_branch_line}"
+      echo -n '  }'
+    fi
+
+    if include_hrms_enabled "${INCLUDE_HRMS}"; then
+      echo ','
+      echo '  {'
+      echo "    \"url\": \"${HRMS_REPO}\","
+      echo "    \"branch\": \"${HRMS_BRANCH}\""
+      echo -n '  }'
+    fi
+
+    echo ''
+    echo ']'
+  } > "${outfile}"
+}
+
+should_build_image() {
+  include_custom_app_enabled "${INCLUDE_CUSTOM_APP}" || include_hrms_enabled "${INCLUDE_HRMS}"
+}
+
+if should_build_image; then
+  if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
+    if [[ ! -x "${FETCH_SCRIPT}" ]]; then
+      echo "Fetch script is missing or not executable: ${FETCH_SCRIPT}" >&2
+      exit 1
+    fi
+
+    "${FETCH_SCRIPT}" "${ENV_FILE}"
+
+    if [[ ! -d "${LOCAL_APP_DIR}/.git" ]]; then
+      echo "Local custom app checkout is missing: ${LOCAL_APP_DIR}" >&2
+      exit 1
+    fi
   fi
 
   apps_json="$(mktemp)"
   trap 'rm -f "${apps_json}"' EXIT
 
-  custom_branch_line=""
-  if [[ -n "${CUSTOM_APP_BRANCH}" ]]; then
-    custom_branch_line=$',\n    "branch": "'"${CUSTOM_APP_BRANCH}"'"'
-  fi
-
-  cat > "${apps_json}" <<EOF
-[
-  {
-    "url": "https://github.com/frappe/erpnext.git",
-    "branch": "${ERPNEXT_VERSION}"
-  },
-  {
-    "url": "file:///opt/frappe/custom-app-src"${custom_branch_line}
-  }
-]
-EOF
+  write_apps_json "${apps_json}"
 
   APPS_JSON_BASE64="$(base64 < "${apps_json}" | tr -d '\n')"
 
@@ -90,7 +118,7 @@ EOF
 
   echo "Built image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}"
 else
-  echo "INCLUDE_CUSTOM_APP=${INCLUDE_CUSTOM_APP} — skipping fetch and image build."
+  echo "INCLUDE_CUSTOM_APP=${INCLUDE_CUSTOM_APP}, INCLUDE_HRMS=${INCLUDE_HRMS} — skipping image build."
   echo "Using image: ${CUSTOM_IMAGE:-frappe/erpnext}:${CUSTOM_TAG:-${ERPNEXT_VERSION}}"
 fi
 
@@ -112,13 +140,27 @@ if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
   if [[ -n "${CUSTOM_APP_BRANCH}" ]]; then
     echo "CUSTOM_APP_BRANCH=${CUSTOM_APP_BRANCH}"
   fi
+fi
+
+if include_hrms_enabled "${INCLUDE_HRMS}"; then
+  echo "INCLUDE_HRMS=yes"
+  echo "HRMS_BRANCH=${HRMS_BRANCH}"
+fi
+
+if should_build_image; then
   cat <<'EOF'
 
 Then:
   1. Redeploy the stack.
-  2. Run `bench --site <site> install-app <app_name>` once if the app is not installed yet.
-  3. Run `bench --site <site> migrate` after later app updates.
+  2. Install apps on the site if needed (see below).
+  3. Run `bench --site <site> migrate` after app updates.
 EOF
+  if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
+    echo "     - bench --site <site> install-app ${CUSTOM_APP_NAME:-<custom_app_name>}"
+  fi
+  if include_hrms_enabled "${INCLUDE_HRMS}"; then
+    echo '     - bench --site <site> install-app hrms'
+  fi
 else
   cat <<'EOF'
 

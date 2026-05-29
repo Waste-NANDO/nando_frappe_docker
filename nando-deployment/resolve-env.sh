@@ -37,3 +37,12 @@ include_custom_app_enabled() {
     *) return 1 ;;
   esac
 }
+
+include_hrms_enabled() {
+  local value
+  value="$(echo "${1:-no}" | tr '[:upper:]' '[:lower:]')"
+  case "${value}" in
+    yes | true | 1) return 0 ;;
+    *) return 1 ;;
+  esac
+}

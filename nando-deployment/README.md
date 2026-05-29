@@ -6,8 +6,8 @@ Operational guide: **[../DEPLOYMENT.md](../DEPLOYMENT.md)**
 
 | File | Stack | Compose project |
 |------|-------|-----------------|
-| [`erpnext-dev.env`](erpnext-dev.env) | Dev `:3003`, custom app | `erpnext` |
-| [`erpnext-main.env`](erpnext-main.env) | Main `:3000`, stock ERPNext | `erpnext-main` |
+| [`erpnext-dev.env`](erpnext-dev.env) | Dev `:3003`, custom app + HRMS | `erpnext` |
+| [`erpnext-main.env`](erpnext-main.env) | Main `:3000`, ERPNext + HRMS | `erpnext-main` |
 | [`erpnext.env`](erpnext.env) | Legacy dev alias | `erpnext` |
 
 Edit passwords on the server. Do not commit real secrets.
@@ -16,7 +16,7 @@ Edit passwords on the server. Do not commit real secrets.
 
 | Script | Purpose |
 |--------|---------|
-| [`build-custom-image.sh`](build-custom-image.sh) | Fetch app (if enabled), build image, render compose |
+| [`build-custom-image.sh`](build-custom-image.sh) | Fetch app (if enabled), build image (ERPNext + optional custom app + HRMS), render compose |
 | [`render-compose.sh`](render-compose.sh) | Render compose YAML only |
 | [`fetch-custom-app.sh`](fetch-custom-app.sh) | Clone/update `custom-app-src` (dev) |
 | [`resolve-env.sh`](resolve-env.sh) | Shared env resolution (sourced by scripts) |

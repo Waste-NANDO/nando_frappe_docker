@@ -19,14 +19,14 @@ if [[ "${COMPOSE_FILE_OUTPUT}" != /* ]]; then
   COMPOSE_FILE_OUTPUT="${REPO_ROOT}/${COMPOSE_FILE_OUTPUT}"
 fi
 
-docker compose --project-name "${COMPOSE_PROJECT_NAME}" \
+write_compose_output "${COMPOSE_FILE_OUTPUT}" \
+  docker compose --project-name "${COMPOSE_PROJECT_NAME}" \
   --env-file "${ENV_FILE}" \
   -f "${REPO_ROOT}/compose.yaml" \
   -f "${REPO_ROOT}/overrides/compose.redis.yaml" \
   -f "${REPO_ROOT}/overrides/compose.mariadb.yaml" \
   -f "${SCRIPT_DIR}/compose.custom-tls.yaml" \
-  -f "${SCRIPT_DIR}/compose.backup.yaml" \
-  config > "${COMPOSE_FILE_OUTPUT}"
+  -f "${SCRIPT_DIR}/compose.backup.yaml"
 
 echo "Rendered compose file: ${COMPOSE_FILE_OUTPUT}"
 echo "Compose project: ${COMPOSE_PROJECT_NAME}"

@@ -37,14 +37,14 @@ CUSTOM_TAG="${CUSTOM_TAG:-${ERPNEXT_VERSION}-custom}"
 FRAPPE_BRANCH="${FRAPPE_BRANCH:-version-16}"
 
 render_compose() {
-  docker compose --project-name "${COMPOSE_PROJECT_NAME}" \
+  write_compose_output "${COMPOSE_FILE_OUTPUT}" \
+    docker compose --project-name "${COMPOSE_PROJECT_NAME}" \
     --env-file "${ENV_FILE}" \
     -f "${REPO_ROOT}/compose.yaml" \
     -f "${REPO_ROOT}/overrides/compose.redis.yaml" \
     -f "${REPO_ROOT}/overrides/compose.mariadb.yaml" \
     -f "${SCRIPT_DIR}/compose.custom-tls.yaml" \
-    -f "${SCRIPT_DIR}/compose.backup.yaml" \
-    config > "${COMPOSE_FILE_OUTPUT}"
+    -f "${SCRIPT_DIR}/compose.backup.yaml"
 }
 
 write_apps_json() {

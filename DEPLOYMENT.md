@@ -30,7 +30,7 @@ nando-deployment/
 ├── erpnext-dev.env           # Dev configuration (edit passwords on server)
 ├── erpnext-main.env          # Main configuration
 ├── erpnext.env                 # Legacy dev alias (scripts still accept it)
-├── erpnext.yaml                # Generated dev compose (gitignored — contains secrets)
+├── erpnext-dev.yaml            # Generated dev compose (gitignored — contains secrets)
 ├── erpnext-main.yaml           # Generated main compose (gitignored)
 ├── build-custom-image.sh       # Build dev image + render dev compose
 ├── render-compose.sh           # Render compose only (main or after env edits)
@@ -55,7 +55,7 @@ Edit on the server (never commit real passwords). Templates are committed with `
 | Variable | Typical value |
 |----------|----------------|
 | `COMPOSE_PROJECT_NAME` | `erpnext` (keeps existing `erpnext_*` volumes) |
-| `COMPOSE_FILE_OUTPUT` | `nando-deployment/erpnext.yaml` |
+| `COMPOSE_FILE_OUTPUT` | `nando-deployment/erpnext-dev.yaml` |
 | `HTTPS_PUBLISH_PORT` | `3003` |
 | `FRAPPE_HOST_NAME` | `https://apps.internal.nandoai.com:3003` |
 | `INCLUDE_CUSTOM_APP` | `yes` |
@@ -82,7 +82,7 @@ Same shape as `erpnext-dev.env`. Scripts prefer `erpnext-dev.env` when no file a
 
 ## Generated compose files (security)
 
-`docker compose config` writes **inlined secrets** (e.g. `DB_PASSWORD`) into `erpnext.yaml` and `erpnext-main.yaml`.
+`docker compose config` writes **inlined secrets** (e.g. `DB_PASSWORD`) into `erpnext-dev.yaml` and `erpnext-main.yaml`.
 
 - Both files are **gitignored** — never commit them.
 - Regenerate after any env or compose change.
@@ -134,12 +134,12 @@ ssh-add ~/.ssh/<github-key>
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ```
 
-This fetches `custom-app-src`, builds `nando-erpnext-custom:<tag>`, and writes `nando-deployment/erpnext.yaml`.
+This fetches `custom-app-src`, builds `nando-erpnext-custom:<tag>`, and writes `nando-deployment/erpnext-dev.yaml`.
 
 ### 3. Deploy
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 ```
 
 ### 4. Site (existing or new)
@@ -149,7 +149,7 @@ Existing server with site already created — skip `new-site`.
 New site:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench new-site \
     --mariadb-user-host-login-scope='%' \
     --db-root-password 'YOUR_DB_PASSWORD' \
@@ -162,17 +162,17 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec
 Install custom app once:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app nando_fulfillment
 ```
 
 ### 5. Enable Server Scripts (dev)
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench set-config -g server_script_enabled 1
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml restart backend
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart backend
 ```
 
 ## Main deployment
@@ -227,7 +227,7 @@ See [`nando-deployment/docker_commands.md`](nando-deployment/docker_commands.md)
 
 | Action | Dev | Main |
 |--------|-----|------|
-| Up | `compose -p erpnext -f nando-deployment/erpnext.yaml up -d` | `compose -p erpnext-main -f nando-deployment/erpnext-main.yaml up -d` |
+| Up | `compose -p erpnext -f nando-deployment/erpnext-dev.yaml up -d` | `compose -p erpnext-main -f nando-deployment/erpnext-main.yaml up -d` |
 | Down | same with `down` | same with `down` |
 | Logs | `logs -f backend` | `logs -f backend` |
 | Bench | `exec backend bench --site apps.internal.nandoai.com …` | same on main yaml |
@@ -265,7 +265,7 @@ Dev Desk changes (Custom Fields, Server Scripts, etc.) live in the **dev databas
 2. On dev:
 
    ```bash
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
      bench --site apps.internal.nandoai.com export-fixtures
    ```
 
@@ -289,7 +289,7 @@ Optional override: set `GCS_PREFIX` in the env file (see [`compose.backup.yaml`]
 Manual backup:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com backup --with-files
 ```
 
@@ -317,7 +317,7 @@ If you already run project `erpnext` on port 3003:
 1. Copy `erpnext.env` → `erpnext-dev.env` (or use the committed template + your passwords).
 2. Ensure `COMPOSE_PROJECT_NAME=erpnext` and `HTTPS_PUBLISH_PORT=3003`.
 3. Rebuild/render with Traefik constraints: `./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env`
-4. Redeploy: `compose -p erpnext -f nando-deployment/erpnext.yaml up -d` — volumes unchanged.
+4. Redeploy: `compose -p erpnext -f nando-deployment/erpnext-dev.yaml up -d` — volumes unchanged.
 5. Bootstrap main separately (new project `erpnext-main`, port 3000).
 
 ## Frappe HRMS
@@ -353,16 +353,16 @@ Dev and main do **not** share users, employees, or HR records. Each stack has it
 ```bash
 sudo ./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-dev.env
 sudo ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 ```
 
 3. Install HRMS on the existing site:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app hrms
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
@@ -391,7 +391,7 @@ sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main
 ### Verify
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com list-apps
 # expect hrms among installed apps
 
@@ -403,6 +403,63 @@ HR workspaces should appear in Desk on both ports after install.
 
 ## Troubleshooting
 
+### Broken Desk / 404 on `/assets/*.bundle.*` (split `sites/assets` volumes)
+
+**Symptom:** Browser 404 + MIME `text/html` for CSS/JS; `docker inspect` shows **different** anonymous volume IDs at `/home/frappe/frappe-bench/sites/assets` on `backend` vs `frontend`; `bench build` in backend does not fix the UI.
+
+**Cause:** The layered image used to declare `sites/assets` as its own `VOLUME` while compose only mounts the shared `sites` volume. Each container then gets a separate anonymous `sites/assets` mount ([frappe_docker#1850](https://github.com/frappe/frappe_docker/issues/1850)).
+
+**Fix (one-time, dev or main):**
+
+1. Rebuild the custom image (includes the Containerfile change):
+
+   ```bash
+   ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
+   ```
+
+2. Recreate containers **without** `-v` (keeps `erpnext_sites` / DB):
+
+   ```bash
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml down
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d --force-recreate
+   ```
+
+3. Rebuild assets on the shared `sites` volume (do **not** use `--hard-link` in Docker):
+
+   ```bash
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+     bench --site apps.internal.nandoai.com build --force
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+     bench --site apps.internal.nandoai.com clear-cache
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart frontend
+   ```
+
+4. Verify backend and frontend share the same path (no separate anonymous volume at `sites/assets`):
+
+   ```bash
+   docker inspect $(docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml ps -q backend) \
+     --format '{{range .Mounts}}{{println .Destination .Name}}{{end}}' | grep assets
+   docker inspect $(docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml ps -q frontend) \
+     --format '{{range .Mounts}}{{println .Destination .Name}}{{end}}' | grep assets
+   ```
+
+   Expect **no line** for `sites/assets`, or the same `erpnext_sites` volume only. HRMS CSS counts should match:
+
+   ```bash
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+     ls sites/assets/hrms/dist/css 2>/dev/null | wc -l
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
+     ls sites/assets/hrms/dist/css 2>/dev/null | wc -l
+   ```
+
+5. Optional: remove orphaned anonymous asset volumes after the stack is healthy:
+
+   ```bash
+   docker volume ls -f dangling=true
+   ```
+
+**Consequences:** Site data and DB are unchanged. Old per-container asset anonymous volumes are abandoned; step 3 repopulates `sites/assets` inside `erpnext_sites`. Repeat the same flow for `erpnext-main` when promoting the image.
+
 ### Site 404
 
 `FRAPPE_SITE_NAME_HEADER` must match the site folder name under `sites/`.
@@ -410,8 +467,8 @@ HR workspaces should appear in Desk on both ports after install.
 ### Traefik / certs
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs proxy
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec proxy ls -la /certs/
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml logs proxy
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec proxy ls -la /certs/
 ```
 
 ### Wrong stack answering

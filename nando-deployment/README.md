@@ -25,7 +25,7 @@ Default env resolution: argument → `erpnext-dev.env` → `erpnext.env`.
 
 ## Generated files (gitignored)
 
-- `erpnext.yaml` — dev stack (contains inlined secrets)
+- `erpnext-dev.yaml` — dev stack (contains inlined secrets)
 - `erpnext-main.yaml` — main stack
 
 Regenerate after env or compose changes. Never commit.

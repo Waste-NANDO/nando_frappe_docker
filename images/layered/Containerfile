@@ -42,9 +42,11 @@ COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe
 
 WORKDIR /home/frappe/frappe-bench
 
+# Only mount `sites` in compose. Do not declare sites/assets as a separate VOLUME:
+# Docker attaches per-container anonymous volumes there and frontend/backend diverge.
+# See https://github.com/frappe/frappe_docker/issues/1850
 VOLUME [ \
   "/home/frappe/frappe-bench/sites", \
-  "/home/frappe/frappe-bench/sites/assets", \
   "/home/frappe/frappe-bench/logs" \
 ]
 

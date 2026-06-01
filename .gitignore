@@ -4,6 +4,7 @@
 # NandoAI deployment secrets (certs + resolved compose)
 nando-deployment/certs/key.pem
 nando-deployment/certs/nando-erp-server.crt
+nando-deployment/erpnext-dev.yaml
 nando-deployment/erpnext.yaml
 nando-deployment/erpnext-main.yaml
 nando-deployment/backups/

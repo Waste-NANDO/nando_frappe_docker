@@ -7,9 +7,9 @@ Site name for both stacks: `apps.internal.nandoai.com`
 Dev:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app hrms
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
@@ -28,21 +28,21 @@ See [DEPLOYMENT.md](../DEPLOYMENT.md) for full build/redeploy steps.
 
 ```bash
 # Deploy / restart
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml up -d
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 
 # Stop (keeps volumes)
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml down
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml down
 
 # Logs
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f backend
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml logs -f proxy
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml logs -f backend
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml logs -f proxy
 
 # Bench
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend \
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 
 # Shell
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext.yaml exec backend bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend bash
 ```
 
 ## Main (port 3000, project `erpnext-main`)

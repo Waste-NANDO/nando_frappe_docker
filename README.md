@@ -21,11 +21,11 @@ HRMS: set `INCLUDE_HRMS=yes` in env files, rebuild images, then `bench install-a
 Quick scripts:
 
 ```bash
-./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env   # dev image + erpnext.yaml
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env   # dev image + erpnext-dev.yaml
 ./nando-deployment/render-compose.sh nando-deployment/erpnext-main.env      # main erpnext-main.yaml
 ```
 
-Generated `erpnext.yaml` / `erpnext-main.yaml` are gitignored (they contain inlined secrets).
+Generated `erpnext-dev.yaml` / `erpnext-main.yaml` are gitignored (they contain inlined secrets).
 
 ## What is this?
 

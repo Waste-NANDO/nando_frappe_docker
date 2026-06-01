@@ -32,10 +32,16 @@ RUN export APP_INSTALL_ARGS="" && \
     /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
   echo "{}" > sites/common_site_config.json && \
-  find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
-  bench build --production
+  find apps -mindepth 1 -path "*/.git" | xargs rm -fr
+# Do not run bench build here: HRMS PWA/roster needs several GB RAM and often
+# fails during docker build (yarn production --run-build-command exit 1).
+# Build assets on the server after deploy; configurator runs materialize-assets.sh.
 
 FROM frappe/base:${FRAPPE_BRANCH} AS backend
+
+USER root
+
+COPY --chown=frappe:frappe nando-deployment/materialize-assets.sh /home/frappe/frappe-bench/materialize-assets.sh
 
 USER frappe
 

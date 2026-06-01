@@ -44,6 +44,7 @@ render_compose() {
     -f "${REPO_ROOT}/overrides/compose.redis.yaml" \
     -f "${REPO_ROOT}/overrides/compose.mariadb.yaml" \
     -f "${SCRIPT_DIR}/compose.custom-tls.yaml" \
+    -f "${SCRIPT_DIR}/compose.materialize.yaml" \
     -f "${SCRIPT_DIR}/compose.backup.yaml"
 }
 

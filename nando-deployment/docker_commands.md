@@ -41,6 +41,12 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 
+# Rebuild frontend bundles and copy to shared sites volume (after app changes)
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+  bench build --force
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+  /home/frappe/frappe-bench/materialize-assets.sh
+
 # Shell
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend bash
 ```

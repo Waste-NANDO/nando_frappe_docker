@@ -26,6 +26,7 @@ write_compose_output "${COMPOSE_FILE_OUTPUT}" \
   -f "${REPO_ROOT}/overrides/compose.redis.yaml" \
   -f "${REPO_ROOT}/overrides/compose.mariadb.yaml" \
   -f "${SCRIPT_DIR}/compose.custom-tls.yaml" \
+  -f "${SCRIPT_DIR}/compose.materialize.yaml" \
   -f "${SCRIPT_DIR}/compose.backup.yaml"
 
 echo "Rendered compose file: ${COMPOSE_FILE_OUTPUT}"

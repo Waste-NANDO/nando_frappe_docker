@@ -424,11 +424,13 @@ HR workspaces should appear in Desk on both ports after install.
    sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d --force-recreate
    ```
 
-3. Rebuild assets on the shared `sites` volume (do **not** use `--hard-link` in Docker):
+3. Redeploy runs `materialize-assets.sh` via `configurator`. After app changes without a new image:
 
    ```bash
    sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-     bench --site apps.internal.nandoai.com build --force
+     bench build --force
+   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+     /home/frappe/frappe-bench/materialize-assets.sh
    sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
      bench --site apps.internal.nandoai.com clear-cache
    sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart frontend
@@ -466,35 +468,21 @@ HR workspaces should appear in Desk on both ports after install.
 
 **Cause:** `bench build` writes bundles under `apps/<app>/.../public/dist/` in the **backend container’s writable layer**. `frontend` is a separate container with the same image but **without** that layer. Symlinks under `sites/assets` point at `apps/.../public`, so nginx in `frontend` resolves an empty `dist/`.
 
-**Immediate fix — materialize assets on the shared volume** (run in `backend` after `bench build --force`):
+**Automated fix (default):** `compose.materialize.yaml` runs `/home/frappe/frappe-bench/materialize-assets.sh` on every deploy via the `configurator` service. The image build also runs it after `bench build --production` in `images/layered/Containerfile`.
+
+After changing apps at runtime, rebuild bundles **and** materialize:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend bash -c '
-set -e
-cd /home/frappe/frappe-bench/sites/assets
-for app in frappe erpnext hrms nando_fulfillment; do
-  [ -e "$app" ] || continue
-  if [ -L "$app" ]; then
-    src=$(readlink -f "$app")
-    echo "Materializing $app from $src"
-    rm -f "$app"
-    mkdir -p "$app"
-    cp -a "$src/." "$app/"
-  fi
-  if [ -L "${app}/node_modules" ]; then
-    rm -f "${app}/node_modules"
-  fi
-done
-'
-
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
-  ls sites/assets/frappe/dist/css/website.bundle.*.css
-
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  bench --site apps.internal.nandoai.com clear-cache
+  /home/frappe/frappe-bench/materialize-assets.sh
+# or: bench build --force first, then materialize-assets.sh
+```
+
+Manual one-liner (same script):
+
+```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  bench --site apps.internal.nandoai.com clear-website-cache
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart frontend
+  /home/frappe/frappe-bench/materialize-assets.sh
 ```
 
 Confirm diagnosis:
@@ -508,7 +496,15 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
   ls apps/frappe/frappe/public/dist/css/website.bundle.*.css | head -1
 ```
 
-**Long-term fix:** `images/layered/Containerfile` runs `bench build --production` in the **image build** stage so `dist/` is baked into the image all containers share. Rebuild with `build-custom-image.sh`, then redeploy. After app changes, either rebuild the image or run `bench build` + materialize again.
+**Asset build (not in Docker image):** `bench build --production` is **not** run during `docker build` — HRMS PWA/roster often fails there (OOM / `yarn production --run-build-command`). After deploy, on the VM (4GB+ RAM free):
+
+```bash
+./nando-deployment/setup-assets.sh nando-deployment/erpnext-dev.env
+# or for main:
+./nando-deployment/setup-assets.sh nando-deployment/erpnext-main.env
+```
+
+Each `compose up` still runs `materialize-assets.sh` in **configurator** (copies `public/` → `sites/assets` when symlinks or stale `dist/`). Run `setup-assets.sh` when bundles are missing or after app updates.
 
 ### Site 404
 

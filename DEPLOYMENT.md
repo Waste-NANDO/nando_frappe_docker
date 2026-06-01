@@ -460,6 +460,56 @@ HR workspaces should appear in Desk on both ports after install.
 
 **Consequences:** Site data and DB are unchanged. Old per-container asset anonymous volumes are abandoned; step 3 repopulates `sites/assets` inside `erpnext_sites`. Repeat the same flow for `erpnext-main` when promoting the image.
 
+### Symlink OK but frontend still 404 on bundles (multi-container)
+
+**Symptom:** `sites/assets/frappe` is a symlink on the shared volume, but `frontend` cannot see `sites/assets/frappe/dist/css/*.css` while `bench build` succeeded in `backend`.
+
+**Cause:** `bench build` writes bundles under `apps/<app>/.../public/dist/` in the **backend container’s writable layer**. `frontend` is a separate container with the same image but **without** that layer. Symlinks under `sites/assets` point at `apps/.../public`, so nginx in `frontend` resolves an empty `dist/`.
+
+**Immediate fix — materialize assets on the shared volume** (run in `backend` after `bench build --force`):
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend bash -c '
+set -e
+cd /home/frappe/frappe-bench/sites/assets
+for app in frappe erpnext hrms nando_fulfillment; do
+  [ -e "$app" ] || continue
+  if [ -L "$app" ]; then
+    src=$(readlink -f "$app")
+    echo "Materializing $app from $src"
+    rm -f "$app"
+    mkdir -p "$app"
+    cp -a "$src/." "$app/"
+  fi
+  if [ -L "${app}/node_modules" ]; then
+    rm -f "${app}/node_modules"
+  fi
+done
+'
+
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
+  ls sites/assets/frappe/dist/css/website.bundle.*.css
+
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+  bench --site apps.internal.nandoai.com clear-cache
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+  bench --site apps.internal.nandoai.com clear-website-cache
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart frontend
+```
+
+Confirm diagnosis:
+
+```bash
+# Often EXISTS on backend only:
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+  ls apps/frappe/frappe/public/dist/css/website.bundle.*.css | head -1
+# Often MISSING on frontend:
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
+  ls apps/frappe/frappe/public/dist/css/website.bundle.*.css | head -1
+```
+
+**Long-term fix:** `images/layered/Containerfile` runs `bench build --production` in the **image build** stage so `dist/` is baked into the image all containers share. Rebuild with `build-custom-image.sh`, then redeploy. After app changes, either rebuild the image or run `bench build` + materialize again.
+
 ### Site 404
 
 `FRAPPE_SITE_NAME_HEADER` must match the site folder name under `sites/`.

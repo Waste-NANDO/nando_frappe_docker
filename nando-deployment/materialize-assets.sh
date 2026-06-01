@@ -13,7 +13,8 @@ mkdir -p "${ASSETS}"
 for app_path in "${APPS}"/*; do
   [[ -d "${app_path}" ]] || continue
   app=$(basename "${app_path}")
-  public=$(find "${app_path}" -type d -name public 2>/dev/null | head -1)
+  # maxdepth avoids scanning node_modules under app trees (can hang for many minutes)
+  public=$(find "${app_path}" -maxdepth 3 -type d -name public 2>/dev/null | head -1)
   [[ -n "${public}" && -d "${public}" ]] || continue
 
   dest="${ASSETS}/${app}"
@@ -34,7 +35,15 @@ for app_path in "${APPS}"/*; do
     echo "[materialize-assets] ${app} <- ${public}"
     rm -rf "${dest}"
     mkdir -p "${dest}"
-    cp -a "${public}/." "${dest}/"
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a --delete \
+        --exclude node_modules \
+        --exclude .git \
+        "${public}/" "${dest}/"
+    else
+      cp -a "${public}/." "${dest}/"
+      rm -rf "${dest}/node_modules"
+    fi
     [[ -L "${dest}/node_modules" ]] && rm -f "${dest}/node_modules"
   else
     echo "[materialize-assets] ${app} OK (skip)"

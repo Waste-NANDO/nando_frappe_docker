@@ -1,6 +1,9 @@
 # Run materialize-assets.sh on deploy so frontend/nginx serves bundles from the shared sites volume.
+# Set MATERIALIZE_ASSETS_ON_START=0 in env to skip (faster up; run setup-assets.sh after).
 services:
   configurator:
+    environment:
+      MATERIALIZE_ASSETS_ON_START: ${MATERIALIZE_ASSETS_ON_START:-1}
     command:
       - >
         ls -1 apps > sites/apps.txt;
@@ -11,4 +14,6 @@ services:
         bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
         bench set-config -gp socketio_port $$SOCKETIO_PORT;
         if [[ -n "$$FRAPPE_HOST_NAME" ]]; then bench set-config -g host_name "$$FRAPPE_HOST_NAME"; fi;
-        /home/frappe/frappe-bench/materialize-assets.sh
+        if [[ "$${MATERIALIZE_ASSETS_ON_START:-1}" = "1" ]]; then
+          /home/frappe/frappe-bench/materialize-assets.sh;
+        fi

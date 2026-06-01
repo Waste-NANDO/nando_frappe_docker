@@ -504,7 +504,7 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 ./nando-deployment/setup-assets.sh nando-deployment/erpnext-main.env
 ```
 
-Each `compose up` still runs `materialize-assets.sh` in **configurator** (copies `public/` → `sites/assets` when symlinks or stale `dist/`). Run `setup-assets.sh` when bundles are missing or after app updates.
+Each `compose up` runs `materialize-assets.sh` in **configurator** (usually under a minute). If `configurator` stays **Waiting** for many minutes, it is often copying a large HRMS `public/` tree — check `docker compose logs configurator`. To skip on deploy, set `MATERIALIZE_ASSETS_ON_START=0` in your env file, re-render compose, `up -d`, then run `setup-assets.sh`. Run `setup-assets.sh` when bundles are missing or after app updates.
 
 ### Site 404
 

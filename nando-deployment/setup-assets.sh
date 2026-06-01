@@ -31,7 +31,7 @@ echo "Building assets (this may take 10–15 minutes with HRMS)..."
 compose exec backend bench build --force
 
 echo "Materializing assets onto the shared sites volume..."
-compose exec backend /home/frappe/frappe-bench/materialize-assets.sh
+compose exec backend bash /home/frappe/frappe-bench/materialize-assets.sh
 
 echo "Clearing caches for ${SITE}..."
 compose exec backend bench --site "${SITE}" clear-cache

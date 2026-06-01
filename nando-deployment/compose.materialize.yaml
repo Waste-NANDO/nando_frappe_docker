@@ -15,5 +15,5 @@ services:
         bench set-config -gp socketio_port $$SOCKETIO_PORT;
         if [[ -n "$$FRAPPE_HOST_NAME" ]]; then bench set-config -g host_name "$$FRAPPE_HOST_NAME"; fi;
         if [[ "$${MATERIALIZE_ASSETS_ON_START:-1}" = "1" ]]; then
-          /home/frappe/frappe-bench/materialize-assets.sh;
+          bash /home/frappe/frappe-bench/materialize-assets.sh;
         fi

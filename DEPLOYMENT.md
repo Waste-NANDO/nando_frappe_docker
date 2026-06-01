@@ -430,7 +430,7 @@ HR workspaces should appear in Desk on both ports after install.
    sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
      bench build --force
    sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-     /home/frappe/frappe-bench/materialize-assets.sh
+     bash /home/frappe/frappe-bench/materialize-assets.sh
    sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
      bench --site apps.internal.nandoai.com clear-cache
    sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart frontend
@@ -474,7 +474,7 @@ After changing apps at runtime, rebuild bundles **and** materialize:
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  /home/frappe/frappe-bench/materialize-assets.sh
+  bash /home/frappe/frappe-bench/materialize-assets.sh
 # or: bench build --force first, then materialize-assets.sh
 ```
 
@@ -482,7 +482,7 @@ Manual one-liner (same script):
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  /home/frappe/frappe-bench/materialize-assets.sh
+  bash /home/frappe/frappe-bench/materialize-assets.sh
 ```
 
 Confirm diagnosis:

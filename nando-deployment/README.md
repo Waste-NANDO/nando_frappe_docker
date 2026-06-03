@@ -34,4 +34,5 @@ Regenerate after env or compose changes. Never commit.
 
 ## Quick reference
 
-[`docker_commands.md`](docker_commands.md)
+[`docker_commands.md`](docker_commands.md)  
+[`README_workspaces.md`](README_workspaces.md) — public/private workspaces, roles, v16 Desk visibility

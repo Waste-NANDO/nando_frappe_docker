@@ -50,4 +50,30 @@ for app_path in "${APPS}"/*; do
   fi
 done
 
+# Code/Text Editor fields load ace.js from sites/assets/frappe/node_modules/ace-builds.
+# The public/ copy above excludes node_modules; nginx (frontend) needs real files on the volume.
+materialize_ace_builds() {
+  local ace_src=""
+  for candidate in \
+    "${APPS}/frappe/node_modules/ace-builds" \
+    "${APPS}/frappe/frappe/node_modules/ace-builds"; do
+    if [[ -d "${candidate}" ]]; then
+      ace_src="${candidate}"
+      break
+    fi
+  done
+  if [[ -z "${ace_src}" ]]; then
+    echo "[materialize-assets] ace-builds not found (skip)"
+    return 0
+  fi
+
+  local ace_dest="${ASSETS}/frappe/node_modules/ace-builds"
+  echo "[materialize-assets] frappe/node_modules/ace-builds <- ${ace_src}"
+  mkdir -p "${ASSETS}/frappe/node_modules"
+  rm -rf "${ace_dest}"
+  cp -a "${ace_src}" "${ace_dest}"
+}
+
+materialize_ace_builds
+
 echo "[materialize-assets] Done"

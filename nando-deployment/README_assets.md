@@ -12,8 +12,8 @@ How JS/CSS reach nginx in this Docker setup.
 With **`BUILD_ASSETS_IN_IMAGE=yes`** (default in `erpnext-*.env`):
 
 1. **`bench build --production`** runs **inside `docker build`** → bundles live in `apps/*/public/dist/` in the image.
-2. **`deploy-stack.sh`** or **`compose up -d`** → **configurator** runs **`materialize-assets.sh`** → copies into **`sites/assets/`** on the shared volume.
-3. **`deploy-stack.sh`** clears Redis cache.
+2. **`deploy-stack.sh`** or **`compose up -d`** → **configurator** force-runs **`materialize-assets.sh`** → copies into **`sites/assets/`** on the shared volume.
+3. **`deploy-stack.sh`** verifies `sites/assets/assets.json` references files that exist on the shared volume, auto-rebuilds the manifest from cached dist if needed, clears Redis cache, and restarts frontend.
 
 **Minimum deploy after code changes:**
 
@@ -21,7 +21,7 @@ With **`BUILD_ASSETS_IN_IMAGE=yes`** (default in `erpnext-*.env`):
 ./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env
 ```
 
-No separate `setup-assets.sh` step unless Desk is still broken.
+No separate `setup-assets.sh` step should be needed for normal deploys. If the manifest/files still do not match, `deploy-stack.sh` fails loudly with the remediation command instead of completing silently.
 
 `deploy-stack.sh` stops **queue workers and scheduler** before `migrate` to avoid MariaDB metadata lock waits on `tabDocType`.
 
@@ -42,12 +42,13 @@ The volume masks image `sites/` content. **Materialize** copies real files from 
 
 | Situation | Command |
 |-----------|---------|
-| Desk 404 / broken CSS after deploy | `./nando-deployment/setup-assets.sh <env>` |
+| `deploy-stack.sh` asset check fails | `./nando-deployment/setup-assets.sh <env>` |
+| Desk 404 / broken CSS after a manual deploy | `./nando-deployment/setup-assets.sh <env>` |
 | Changed **JS in custom app** without rebuilding image | `setup-assets.sh <env> --full` |
 | `BUILD_ASSETS_IN_IMAGE=no` | `setup-assets.sh <env> --full` after each deploy |
 | Normal deploy with in-image build | **Not needed** (configurator handles materialize) |
 
-**Default** (`setup-assets.sh` without `--full`): materialize + clear-cache + restart frontend — **no runtime bench build**.
+**Default** (`setup-assets.sh` without `--full`): force-materialize + sync/rebuild `assets.json` from cached dist + clear-cache + restart frontend — **no full runtime bundle build**.
 
 **`--full`:** runtime `bench build --force` + materialize + clear-cache + restart frontend (~10–15 min with HRMS).
 
@@ -109,9 +110,9 @@ After OOM: `sudo dmesg -T | grep -i oom | tail -10`
 
 ### Desk 404 on `/assets/*.bundle.*`
 
-1. `./nando-deployment/setup-assets.sh nando-deployment/erpnext-dev.env`
-2. Confirm backend and frontend share one **`sites` volume** ([DEPLOYMENT.md](../DEPLOYMENT.md))
-3. `restart frontend`
+1. Re-run `./nando-deployment/deploy-stack.sh <env>` so it can self-verify and auto-repair the manifest.
+2. If the deploy asset check fails, run `./nando-deployment/setup-assets.sh <env>`.
+3. Confirm backend and frontend share one **`sites` volume** ([DEPLOYMENT.md](../DEPLOYMENT.md)).
 
 ### Browser: MIME type `text/html` on CSS (login / website bundles)
 
@@ -130,7 +131,7 @@ Refused to apply style from '.../website.bundle.NQ53BIH4.css' because its MIME t
 ./nando-deployment/setup-assets.sh nando-deployment/erpnext-main.env
 ```
 
-`setup-assets.sh` force-materializes app `dist/` trees, **deletes stale `sites/assets/assets.json`**, then syncs the manifest from `.baked-assets/` in the image or runs `bench build --production --using-cached`.
+`deploy-stack.sh` and `setup-assets.sh` both force-materialize app `dist/` trees, **delete stale `sites/assets/assets.json`**, then sync the manifest from `.baked-assets/` in the image or run `bench build --production --using-cached`. `deploy-stack.sh` also verifies that every hashed bundle referenced by `assets.json` exists on the frontend volume.
 
 If that still fails, rebuild the image once (so `.baked-assets/` exists), then redeploy:
 

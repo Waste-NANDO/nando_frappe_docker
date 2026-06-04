@@ -73,7 +73,8 @@ compose exec backend bash -c '
     app=$(basename "${app_path}")
     rm -rf "sites/assets/${app}"
   done
-  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh
+  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh \
+    || echo "materialize-assets.sh could not sync baked manifests; rebuilding from cached dist..."
 '
 
 echo "Syncing assets.json manifest with bundle files on volume..."

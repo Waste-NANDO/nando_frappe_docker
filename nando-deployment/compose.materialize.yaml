@@ -6,6 +6,7 @@ services:
   configurator:
     volumes:
       - ./materialize-assets.sh:/home/frappe/frappe-bench/materialize-assets.sh:ro
+      - ./sync-assets-manifest.sh:/home/frappe/frappe-bench/sync-assets-manifest.sh:ro
     environment:
       MATERIALIZE_ASSETS_ON_START: ${MATERIALIZE_ASSETS_ON_START:-1}
     command:
@@ -19,7 +20,8 @@ services:
         bench set-config -gp socketio_port $$SOCKETIO_PORT;
         if [[ -n "$$FRAPPE_HOST_NAME" ]]; then bench set-config -g host_name "$$FRAPPE_HOST_NAME"; fi;
         if [[ "$${MATERIALIZE_ASSETS_ON_START:-1}" = "1" ]]; then
-          bash /home/frappe/frappe-bench/materialize-assets.sh;
+          FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh ||
+            bash /home/frappe/frappe-bench/sync-assets-manifest.sh;
         fi
 
   backend:

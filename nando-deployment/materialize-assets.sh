@@ -45,14 +45,12 @@ sync_assets_manifest() {
       done
       return 0
     fi
-    echo "[materialize-assets] baked manifests directory empty"
+    echo "[materialize-assets] WARNING: baked manifests directory empty" >&2
   else
-    echo "[materialize-assets] no baked manifests at ${BAKED}"
+    echo "[materialize-assets] WARNING: no baked manifests at ${BAKED}" >&2
   fi
 
-  echo "[materialize-assets] refreshing assets.json (bench build --production --using-cached)..."
-  cd "${BENCH_ROOT}"
-  bench build --production --using-cached
+  return 1
 }
 
 for app_path in "${APPS}"/*; do

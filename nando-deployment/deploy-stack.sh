@@ -47,6 +47,51 @@ compose() {
   docker compose --project-name "${COMPOSE_PROJECT_NAME}" -f "${COMPOSE_FILE_OUTPUT}" "$@"
 }
 
+verify_assets_manifest() {
+  local service="$1"
+
+  compose exec -T "${service}" python3 - <<'PY'
+from pathlib import Path
+import json
+import re
+import sys
+
+assets = Path("sites/assets")
+manifest = assets / "assets.json"
+
+if not manifest.is_file():
+    print(f"[asset-check] missing {manifest}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    data = json.loads(manifest.read_text())
+except Exception as exc:
+    print(f"[asset-check] invalid {manifest}: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+text = json.dumps(data)
+refs = sorted(set(re.findall(
+    r"(?:/assets/)?([A-Za-z0-9_.-]+/dist/(?:css|js)/[A-Za-z0-9_.-]+\.bundle\.[A-Za-z0-9_-]+\.(?:css|js))",
+    text,
+)))
+
+if not refs:
+    print("[asset-check] no hashed bundle references found in sites/assets/assets.json", file=sys.stderr)
+    sys.exit(1)
+
+missing = [ref for ref in refs if not (assets / ref).is_file()]
+if missing:
+    print("[asset-check] manifest references missing files:", file=sys.stderr)
+    for ref in missing[:20]:
+        print(f"  /assets/{ref}", file=sys.stderr)
+    if len(missing) > 20:
+        print(f"  ... and {len(missing) - 20} more", file=sys.stderr)
+    sys.exit(1)
+
+print(f"[asset-check] OK: {len(refs)} manifest bundle references exist")
+PY
+}
+
 if [[ "${SKIP_BUILD}" -eq 0 ]]; then
   if include_custom_app_enabled "${INCLUDE_CUSTOM_APP:-yes}" || include_hrms_enabled "${INCLUDE_HRMS:-no}"; then
     "${SCRIPT_DIR}/build-custom-image.sh" "${ENV_FILE}"
@@ -78,10 +123,24 @@ compose exec backend bash -c '
     app=$(basename "${app_path}")
     rm -rf "sites/assets/${app}"
   done
-  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh
+  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh \
+    || echo "materialize-assets.sh could not sync baked manifests; rebuilding from cached dist..."
   bash /home/frappe/frappe-bench/sync-assets-manifest.sh 2>/dev/null \
     || { rm -f sites/assets/*.json; bench build --production --using-cached; }
 '
+
+if ! verify_assets_manifest backend; then
+  echo "assets.json is stale or incomplete; rebuilding manifest from cached dist..."
+  compose exec backend bash -c '
+    set -euo pipefail
+    cd /home/frappe/frappe-bench
+    rm -f sites/assets/*.json
+    bench build --production --using-cached
+    FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh \
+      || bash /home/frappe/frappe-bench/sync-assets-manifest.sh
+  '
+  verify_assets_manifest backend
+fi
 
 if [[ "${SKIP_MIGRATE}" -eq 0 ]]; then
   # Workers/scheduler query DocType while migrate ALTERs it → metadata lock wait.
@@ -107,18 +166,12 @@ echo "Restarting frontend..."
 compose restart frontend
 
 echo ""
-echo "Asset check (frontend volume — desk + login/website bundles):"
-for pattern in \
-  'sites/assets/frappe/dist/css/desk.bundle.*.css' \
-  'sites/assets/frappe/dist/css/website.bundle.*.css' \
-  'sites/assets/frappe/dist/css/login.bundle.*.css'; do
-  if ! compose exec frontend bash -c "ls ${pattern} 2>/dev/null | head -1"; then
-    echo "WARNING: missing ${pattern} on frontend volume. Run:" >&2
-    echo "  ./nando-deployment/setup-assets.sh ${ENV_FILE}" >&2
-  fi
-done
-if ! compose exec backend test -f sites/assets/assets.json; then
-  echo "WARNING: sites/assets/assets.json missing. Run setup-assets.sh or bench build --using-cached." >&2
+echo "Asset check (frontend volume):"
+if ! verify_assets_manifest frontend; then
+  echo "ERROR: frontend cannot serve one or more bundles referenced by sites/assets/assets.json." >&2
+  echo "Try:" >&2
+  echo "  ./nando-deployment/setup-assets.sh ${ENV_FILE}" >&2
+  exit 1
 fi
 
 echo ""

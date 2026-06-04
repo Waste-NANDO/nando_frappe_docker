@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
-# Build JS/CSS bundles in backend and copy them to the shared sites volume.
-# Run once after deploy or when apps change (needs ~4GB+ free RAM on the host).
+# Sync Desk assets on the shared sites volume.
+#
+# Default (BUILD_ASSETS_IN_IMAGE=yes): materialize + clear-cache + restart frontend
+#   — bundles already compiled during docker build.
+#
+# --full: bench build --force + materialize + clear-cache + restart frontend
+#   — use when BUILD_ASSETS_IN_IMAGE=no or you changed app JS without rebuilding the image.
+#
+# Usage:
+#   ./setup-assets.sh nando-deployment/erpnext-dev.env
+#   ./setup-assets.sh nando-deployment/erpnext-dev.env --full
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,6 +17,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/resolve-env.sh"
 
 ENV_FILE="$(resolve_env_file "${SCRIPT_DIR}" "${1:-}")"
+shift || true
+
+FULL_BUILD=0
+for arg in "$@"; do
+  case "${arg}" in
+    --full) FULL_BUILD=1 ;;
+    *)
+      echo "Unknown option: ${arg}" >&2
+      echo "Usage: $0 [env-file] [--full]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 set -a
 # shellcheck disable=SC1090
@@ -22,13 +44,25 @@ if [[ "${COMPOSE_FILE_OUTPUT}" != /* ]]; then
 fi
 
 SITE="${FRAPPE_SITE_NAME_HEADER:-apps.internal.nandoai.com}"
+BUILD_ASSETS_IN_IMAGE="${BUILD_ASSETS_IN_IMAGE:-yes}"
 
 compose() {
   docker compose --project-name "${COMPOSE_PROJECT_NAME}" -f "${COMPOSE_FILE_OUTPUT}" "$@"
 }
 
-echo "Building assets (this may take 10–15 minutes with HRMS)..."
-compose exec backend bench build --force
+run_bench_build=0
+if [[ "${FULL_BUILD}" -eq 1 ]]; then
+  run_bench_build=1
+elif ! build_assets_in_image_enabled "${BUILD_ASSETS_IN_IMAGE}"; then
+  run_bench_build=1
+fi
+
+if [[ "${run_bench_build}" -eq 1 ]]; then
+  echo "Building assets in backend (this may take 10–15 minutes with HRMS)..."
+  compose exec backend bench build --force
+else
+  echo "Skipping bench build (assets baked in image; use --full to rebuild on the server)."
+fi
 
 echo "Materializing assets onto the shared sites volume..."
 compose exec backend bash /home/frappe/frappe-bench/materialize-assets.sh

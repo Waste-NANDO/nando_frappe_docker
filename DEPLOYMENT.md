@@ -170,25 +170,43 @@ Mitigations:
 
 ## Dev deployment
 
+### Routine deploy (after app or env changes)
+
+Bump `CUSTOM_TAG` in `erpnext-dev.env` when image contents change, then:
+
+```bash
+# Loads GITHUB_TOKEN from nando-deployment/github.env if present
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env
+```
+
+One script: **build image** (includes `bench build --production` when `BUILD_ASSETS_IN_IMAGE=yes`) → **`up -d`** (configurator materializes assets) → **migrate** → **clear-cache**.
+
+You do **not** need `setup-assets.sh` after a normal deploy. Use it only if Desk assets are still broken ([README_assets.md](nando-deployment/README_assets.md)).
+
+Options:
+
+```bash
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-build
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-build --skip-migrate
+```
+
 ### 1. Configure env
 
 ```bash
 nano nando-deployment/erpnext-dev.env
 # Set DB_PASSWORD, GCS_BUCKET, CUSTOM_APP_* as needed
+# BUILD_ASSETS_IN_IMAGE=yes  (default — compile JS/CSS during docker build)
 ```
 
-### 2. Build image and render compose
+### 2. Build image only (optional split)
 
 ```bash
-# If not using nando-deployment/github.env:
-# export GITHUB_TOKEN=ghp_...
-
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ```
 
-This fetches repos into `custom-apps/` (see `CUSTOM_APP_KEYS`), builds `nando-erpnext-custom:<tag>`, and writes `nando-deployment/erpnext-dev.yaml`.
+This fetches repos into `custom-apps/`, builds `nando-erpnext-custom:<tag>` (asset compile ~10–20 min with HRMS), and writes `nando-deployment/erpnext-dev.yaml`.
 
-### 3. Deploy
+### 3. Deploy only (optional split)
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
@@ -565,13 +583,11 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
   ls apps/frappe/frappe/public/dist/css/website.bundle.*.css | head -1
 ```
 
-**Asset build (not in Docker image):** `bench build --production` is **not** run during `docker build` — HRMS PWA/roster often fails there (OOM / `yarn production --run-build-command`). After deploy, on the VM (4GB+ RAM free):
+**Asset build (in Docker image by default):** When `BUILD_ASSETS_IN_IMAGE=yes` in the env file, `bench build --production` runs during `docker build` (needs ~8GB+ free RAM during the build step). After deploy, **configurator** materializes bundles onto the `sites` volume — no post-deploy `setup-assets.sh` for normal releases.
 
-```bash
-./nando-deployment/setup-assets.sh nando-deployment/erpnext-dev.env
-# or for main:
-./nando-deployment/setup-assets.sh nando-deployment/erpnext-main.env
-```
+Disable with `BUILD_ASSETS_IN_IMAGE=no` and use `./nando-deployment/setup-assets.sh` (or `--full`) after deploy instead.
+
+Details: [`nando-deployment/README_assets.md`](nando-deployment/README_assets.md).
 
 Each `compose up` runs `materialize-assets.sh` in **configurator** (usually under a minute). If `configurator` stays **Waiting** for many minutes, it is often copying a large HRMS `public/` tree — check `docker compose logs configurator`. To skip on deploy, set `MATERIALIZE_ASSETS_ON_START=0` in your env file, re-render compose, `up -d`, then run `setup-assets.sh`. Run `setup-assets.sh` when bundles are missing or after app updates.
 

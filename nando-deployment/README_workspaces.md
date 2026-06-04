@@ -42,7 +42,7 @@ ws.public = 1
 ws.for_user = ""
 ws.is_hidden = 0
 ws.module = "NANDO_CRM"
-ws.app = "nando_fulfillment"
+ws.app = "nando_crm"
 ws.save(ignore_permissions=True)
 frappe.db.commit()
 exit()
@@ -53,7 +53,7 @@ Or set values directly:
 ```python
 frappe.db.set_value("Workspace", "NANDO_CRM", {
     "public": 1, "for_user": "", "is_hidden": 0,
-    "module": "NANDO_CRM", "app": "nando_fulfillment",
+    "module": "NANDO_CRM", "app": "nando_crm",
 })
 frappe.db.commit()
 ```
@@ -119,7 +119,7 @@ Saving a **public** workspace tied to a **custom** module can fail with:
 
 Fix on **Module Def** (e.g. `NANDO_CRM`):
 
-- Set **Package** to the app name (`nando_fulfillment`), **or**
+- Set **Package** to the app name (`nando_crm`), **or**
 - Uncheck **Custom** if that matches how the module is shipped in the app repo.
 
 ## Private → public in the UI
@@ -128,9 +128,9 @@ If a workspace was first saved as **private**, the **Public** flag is not reliab
 
 ## Version control (custom app)
 
-With **developer_mode** on, saving a **public** workspace with a **module** set can export JSON under the app tree (e.g. `apps/nando_fulfillment/.../workspace/`). Commit those files to promote the workspace with the app image to main.
+With **developer_mode** on, saving a **public** workspace with a **module** set can export JSON under the app tree (e.g. `apps/nando_crm/.../workspace/`). Commit those files to promote the workspace with the app image to main.
 
 ## Related fixes (same dev session)
 
 - **Server Script** code editor 404: Ace lives under `sites/assets/frappe/node_modules/ace-builds/`. [`materialize-assets.sh`](materialize-assets.sh) copies it after each materialize (frontend nginx does not see `apps/` in the backend container layer).
-- Asset rebuild: [`setup-assets.sh`](setup-assets.sh) or [DEPLOYMENT.md § Broken Desk / 404 on assets](../DEPLOYMENT.md).
+- Asset rebuild: [`setup-assets.sh`](setup-assets.sh) or [`README_assets.md`](README_assets.md).

@@ -47,6 +47,15 @@ include_hrms_enabled() {
   esac
 }
 
+build_assets_in_image_enabled() {
+  local value
+  value="$(echo "${1:-yes}" | tr '[:upper:]' '[:lower:]')"
+  case "${value}" in
+    yes | true | 1) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # App key to env prefix: nando_crm -> NANDO_CRM
 custom_app_env_prefix() {
   echo "$1" | tr '[:lower:]-' '[:upper:]_'

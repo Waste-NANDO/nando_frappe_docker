@@ -7,6 +7,8 @@ FROM frappe/build:${FRAPPE_BRANCH} AS builder
 ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 ARG APPS_JSON_BASE64
+ARG BUILD_ASSETS_IN_IMAGE=1
+ARG BENCH_BUILD_NODE_MEMORY_MB=6144
 
 USER root
 
@@ -32,10 +34,16 @@ RUN export APP_INSTALL_ARGS="" && \
     /home/frappe/frappe-bench && \
   cd /home/frappe/frappe-bench && \
   echo "{}" > sites/common_site_config.json && \
-  find apps -mindepth 1 -path "*/.git" | xargs rm -fr
-# Do not run bench build here: HRMS PWA/roster needs several GB RAM and often
-# fails during docker build (yarn production --run-build-command exit 1).
-# Build assets on the server after deploy; configurator runs materialize-assets.sh.
+  find apps -mindepth 1 -path "*/.git" | xargs rm -fr && \
+  if [ "${BUILD_ASSETS_IN_IMAGE}" = "1" ]; then \
+    export NODE_OPTIONS="--max-old-space-size=${BENCH_BUILD_NODE_MEMORY_MB}" && \
+    echo "Running bench build --production (BUILD_ASSETS_IN_IMAGE=1)..." && \
+    bench build --production; \
+  else \
+    echo "Skipping bench build (BUILD_ASSETS_IN_IMAGE=${BUILD_ASSETS_IN_IMAGE})"; \
+  fi
+# Assets are baked into apps/*/public/dist when BUILD_ASSETS_IN_IMAGE=1.
+# On deploy, configurator materialize-assets.sh copies them to sites/assets on the shared volume.
 
 FROM frappe/base:${FRAPPE_BRANCH} AS backend
 

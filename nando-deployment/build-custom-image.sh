@@ -33,6 +33,13 @@ HRMS_BRANCH="${HRMS_BRANCH:-version-16}"
 CUSTOM_IMAGE="${CUSTOM_IMAGE:-nando-erpnext-custom}"
 CUSTOM_TAG="${CUSTOM_TAG:-${ERPNEXT_VERSION}-custom}"
 FRAPPE_BRANCH="${FRAPPE_BRANCH:-version-16}"
+BUILD_ASSETS_IN_IMAGE="${BUILD_ASSETS_IN_IMAGE:-yes}"
+BENCH_BUILD_NODE_MEMORY_MB="${BENCH_BUILD_NODE_MEMORY_MB:-6144}"
+
+build_assets_arg=0
+if build_assets_in_image_enabled "${BUILD_ASSETS_IN_IMAGE}"; then
+  build_assets_arg=1
+fi
 
 render_compose() {
   write_compose_output "${COMPOSE_FILE_OUTPUT}" \
@@ -115,11 +122,18 @@ if should_build_image; then
 
   APPS_JSON_BASE64="$(base64 < "${apps_json}" | tr -d '\n')"
 
+  echo "Building image (BUILD_ASSETS_IN_IMAGE=${build_assets_arg}, node heap ${BENCH_BUILD_NODE_MEMORY_MB}MB)..."
+  if [[ "${build_assets_arg}" -eq 1 ]]; then
+    echo "Asset compile runs inside docker build — expect 10–20 minutes with HRMS."
+  fi
+
   docker buildx build \
     --load \
     --build-arg FRAPPE_PATH="https://github.com/frappe/frappe" \
     --build-arg FRAPPE_BRANCH="${FRAPPE_BRANCH}" \
     --build-arg APPS_JSON_BASE64="${APPS_JSON_BASE64}" \
+    --build-arg BUILD_ASSETS_IN_IMAGE="${build_assets_arg}" \
+    --build-arg BENCH_BUILD_NODE_MEMORY_MB="${BENCH_BUILD_NODE_MEMORY_MB}" \
     --tag "${CUSTOM_IMAGE}:${CUSTOM_TAG}" \
     --file "${REPO_ROOT}/images/layered/Containerfile" \
     "${REPO_ROOT}"
@@ -167,12 +181,22 @@ if include_hrms_enabled "${INCLUDE_HRMS}"; then
 fi
 
 if should_build_image; then
-  cat <<'EOF'
+  cat <<EOF
 
-Then:
-  1. Redeploy the stack.
-  2. Install apps on the site if needed (see below).
-  3. Run `bench --site <site> migrate` after app updates.
+Then deploy (minimum steps):
+
+  ./nando-deployment/deploy-stack.sh ${ENV_FILE}
+
+Or manually:
+  1. docker compose --project-name ${COMPOSE_PROJECT_NAME} -f ${COMPOSE_FILE_OUTPUT} up -d
+     (configurator materializes assets from the image onto the sites volume)
+  2. bench --site <site> migrate   — after app/schema changes only
+  3. bench --site <site> clear-cache — if Desk looks stale
+
+Assets are built into the image (BUILD_ASSETS_IN_IMAGE=${BUILD_ASSETS_IN_IMAGE}).
+You do not need setup-assets.sh after a normal image deploy unless Desk is still broken.
+Use: ./nando-deployment/setup-assets.sh ${ENV_FILE} --full
+  only when changing app JS without rebuilding the image.
 EOF
   if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
     read -r -a install_apps <<< "$(resolve_site_install_apps)"
@@ -183,11 +207,11 @@ EOF
       install_list="${install_list} ${app}"
     done
     if [[ -n "${install_list}" ]]; then
-      echo "     - bench --site <site> install-app${install_list}"
+      echo "  First-time site: bench --site <site> install-app${install_list}"
     fi
   fi
   if include_hrms_enabled "${INCLUDE_HRMS}"; then
-    echo '     - bench --site <site> install-app hrms'
+    echo '  First-time site: bench --site <site> install-app hrms'
   fi
 else
   cat <<'EOF'

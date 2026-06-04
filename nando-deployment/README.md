@@ -18,11 +18,12 @@ GitHub PAT for private custom app repos: copy [`github.env.example`](github.env.
 
 | Script | Purpose |
 |--------|---------|
-| [`build-custom-image.sh`](build-custom-image.sh) | Fetch app (if enabled), build image (ERPNext + optional custom app + HRMS), render compose |
+| [`deploy-stack.sh`](deploy-stack.sh) | **Default deploy:** build image + `up -d` + migrate + clear-cache |
+| [`build-custom-image.sh`](build-custom-image.sh) | Fetch apps (if enabled), build image (includes asset compile when `BUILD_ASSETS_IN_IMAGE=yes`), render compose |
+| [`setup-assets.sh`](setup-assets.sh) | Re-sync assets to volume (materialize only by default; `--full` for runtime bench build) |
 | [`render-compose.sh`](render-compose.sh) | Render compose YAML only |
 | [`fetch-custom-app.sh`](fetch-custom-app.sh) | Clone/update apps into `custom-apps/<key>/` (reads `CUSTOM_APP_KEYS`) |
 | [`materialize-assets.sh`](materialize-assets.sh) | Copy `apps/*/public` (incl. `dist/`) into `sites/assets` on the shared volume |
-| [`setup-assets.sh`](setup-assets.sh) | `bench build --force` + materialize + clear-cache (run on VM after deploy) |
 | [`resolve-env.sh`](resolve-env.sh) | Shared env resolution (sourced by scripts) |
 
 Default env resolution: argument → `erpnext-dev.env` → `erpnext.env`.
@@ -36,6 +37,8 @@ Regenerate after env or compose changes. Never commit.
 
 ## Quick reference
 
+[`deploy-stack.sh`](deploy-stack.sh) — **usual deploy**  
 [`docker_commands.md`](docker_commands.md)  
+[`README_assets.md`](README_assets.md) — asset troubleshooting  
 [`README_workspaces.md`](README_workspaces.md) — public/private workspaces, roles, v16 Desk visibility  
 [`README_migrate_customizations.md`](README_migrate_customizations.md) — dev → main: empty config app, fixtures, DocTypes, scripts

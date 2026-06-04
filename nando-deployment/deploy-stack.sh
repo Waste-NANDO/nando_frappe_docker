@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Build image (if needed), redeploy stack, migrate, clear-cache.
+# Assets: compiled in docker build (BUILD_ASSETS_IN_IMAGE) and materialized on up by configurator.
+#
+# Usage:
+#   ./deploy-stack.sh nando-deployment/erpnext-dev.env
+#   ./deploy-stack.sh nando-deployment/erpnext-main.env --skip-build
+#   ./deploy-stack.sh nando-deployment/erpnext-dev.env --skip-migrate
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=resolve-env.sh
+source "${SCRIPT_DIR}/resolve-env.sh"
+
+ENV_FILE="$(resolve_env_file "${SCRIPT_DIR}" "${1:-}")"
+shift || true
+
+SKIP_BUILD=0
+SKIP_MIGRATE=0
+for arg in "$@"; do
+  case "${arg}" in
+    --skip-build) SKIP_BUILD=1 ;;
+    --skip-migrate) SKIP_MIGRATE=1 ;;
+    *)
+      echo "Unknown option: ${arg}" >&2
+      echo "Usage: $0 [env-file] [--skip-build] [--skip-migrate]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+set -a
+# shellcheck disable=SC1090
+source "${ENV_FILE}"
+set +a
+
+COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-erpnext}"
+COMPOSE_FILE_OUTPUT="${COMPOSE_FILE_OUTPUT:-${SCRIPT_DIR}/erpnext-dev.yaml}"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [[ "${COMPOSE_FILE_OUTPUT}" != /* ]]; then
+  COMPOSE_FILE_OUTPUT="${REPO_ROOT}/${COMPOSE_FILE_OUTPUT}"
+fi
+
+SITE="${FRAPPE_SITE_NAME_HEADER:-apps.internal.nandoai.com}"
+
+compose() {
+  docker compose --project-name "${COMPOSE_PROJECT_NAME}" -f "${COMPOSE_FILE_OUTPUT}" "$@"
+}
+
+if [[ "${SKIP_BUILD}" -eq 0 ]]; then
+  if include_custom_app_enabled "${INCLUDE_CUSTOM_APP:-yes}" || include_hrms_enabled "${INCLUDE_HRMS:-no}"; then
+    "${SCRIPT_DIR}/build-custom-image.sh" "${ENV_FILE}"
+  else
+    "${SCRIPT_DIR}/render-compose.sh" "${ENV_FILE}"
+  fi
+else
+  echo "Skipping image build (--skip-build)."
+fi
+
+echo "Deploying stack (project ${COMPOSE_PROJECT_NAME})..."
+compose up -d
+
+echo "Waiting for configurator (materialize assets)..."
+if ! compose ps -a --format '{{.Name}} {{.State}}' | grep -q configurator; then
+  echo "Note: no configurator service found; run setup-assets.sh if Desk assets are missing."
+else
+  configurator_id="$(compose ps -aq configurator | head -1)"
+  if [[ -n "${configurator_id}" ]]; then
+    docker wait "${configurator_id}" >/dev/null 2>&1 || true
+  fi
+fi
+
+if [[ "${SKIP_MIGRATE}" -eq 0 ]]; then
+  echo "Running migrate on ${SITE}..."
+  compose exec backend bench --site "${SITE}" migrate
+else
+  echo "Skipping migrate (--skip-migrate)."
+fi
+
+echo "Clearing cache..."
+compose exec backend bench --site "${SITE}" clear-cache
+compose exec backend bench --site "${SITE}" clear-website-cache
+
+echo ""
+echo "Deploy complete."
+echo "  Site: ${SITE}"
+echo "  Compose: ${COMPOSE_FILE_OUTPUT}"
+echo ""
+compose ps

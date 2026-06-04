@@ -9,8 +9,16 @@ ASSETS="${BENCH_ROOT}/sites/assets"
 APPS="${BENCH_ROOT}/apps"
 BAKED="${BENCH_ROOT}/.baked-assets"
 FORCE_MATERIALIZE="${FORCE_MATERIALIZE:-0}"
+MANIFEST_SYNC_NEEDED=0
 
 mkdir -p "${ASSETS}"
+
+if [[ "${FORCE_MATERIALIZE}" = "1" ]]; then
+  shopt -s nullglob
+  rm -f "${ASSETS}"/*.json
+  shopt -u nullglob
+  MANIFEST_SYNC_NEEDED=1
+fi
 
 resolve_public_dir() {
   local app_path="$1"
@@ -23,6 +31,28 @@ resolve_public_dir() {
   fi
 
   find "${app_path}" -maxdepth 3 -type d -name public 2>/dev/null | head -1
+}
+
+sync_assets_manifest() {
+  if [[ -d "${BAKED}" ]]; then
+    shopt -s nullglob
+    local manifests=("${BAKED}"/*.json)
+    shopt -u nullglob
+    if [[ "${#manifests[@]}" -gt 0 ]]; then
+      for manifest in "${manifests[@]}"; do
+        echo "[materialize-assets] manifest $(basename "${manifest}") <- ${manifest}"
+        cp -a "${manifest}" "${ASSETS}/$(basename "${manifest}")"
+      done
+      return 0
+    fi
+    echo "[materialize-assets] baked manifests directory empty"
+  else
+    echo "[materialize-assets] no baked manifests at ${BAKED}"
+  fi
+
+  echo "[materialize-assets] refreshing assets.json (bench build --production --using-cached)..."
+  cd "${BENCH_ROOT}"
+  bench build --production --using-cached
 }
 
 for app_path in "${APPS}"/*; do
@@ -61,31 +91,11 @@ for app_path in "${APPS}"/*; do
       rm -rf "${dest}/node_modules"
     fi
     [[ -L "${dest}/node_modules" ]] && rm -f "${dest}/node_modules"
+    MANIFEST_SYNC_NEEDED=1
   else
     echo "[materialize-assets] ${app} OK (skip)"
   fi
 done
-
-materialize_manifests() {
-  if [[ ! -d "${BAKED}" ]]; then
-    echo "[materialize-assets] no baked manifests at ${BAKED} (image built without BUILD_ASSETS_IN_IMAGE?)"
-    return 0
-  fi
-
-  shopt -s nullglob
-  local manifests=("${BAKED}"/*.json)
-  shopt -u nullglob
-
-  if [[ "${#manifests[@]}" -eq 0 ]]; then
-    echo "[materialize-assets] baked manifests directory empty"
-    return 0
-  fi
-
-  for manifest in "${manifests[@]}"; do
-    echo "[materialize-assets] manifest $(basename "${manifest}") <- ${manifest}"
-    cp -a "${manifest}" "${ASSETS}/$(basename "${manifest}")"
-  done
-}
 
 # Code/Text Editor fields load ace.js from sites/assets/frappe/node_modules/ace-builds.
 # The public/ copy above excludes node_modules; nginx (frontend) needs real files on the volume.
@@ -111,7 +121,10 @@ materialize_ace_builds() {
   cp -a "${ace_src}" "${ace_dest}"
 }
 
-materialize_manifests
 materialize_ace_builds
+
+if [[ "${MANIFEST_SYNC_NEEDED}" -eq 1 ]] || [[ ! -f "${ASSETS}/assets.json" ]]; then
+  sync_assets_manifest
+fi
 
 echo "[materialize-assets] Done"

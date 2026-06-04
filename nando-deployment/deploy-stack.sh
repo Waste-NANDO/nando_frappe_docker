@@ -78,13 +78,7 @@ compose exec backend bash -c '
     app=$(basename "${app_path}")
     rm -rf "sites/assets/${app}"
   done
-  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh 2>/dev/null \
-    || bash /home/frappe/frappe-bench/materialize-assets.sh
-  if [[ ! -f sites/assets/assets.json ]]; then
-    echo "No assets.json after materialize; rebuilding manifest from cached dist..."
-    bench build --production --using-cached
-    bash /home/frappe/frappe-bench/materialize-assets.sh
-  fi
+  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh
 '
 
 if [[ "${SKIP_MIGRATE}" -eq 0 ]]; then

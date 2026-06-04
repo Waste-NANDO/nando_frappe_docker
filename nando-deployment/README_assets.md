@@ -126,15 +126,17 @@ Refused to apply style from '.../website.bundle.NQ53BIH4.css' because its MIME t
 **Fix (current image, no rebuild):**
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  bench build --production --using-cached
-
-./nando-deployment/setup-assets.sh nando-deployment/erpnext-dev.env
+# Use the env file for the stack you are fixing (main = :3000, dev = :3003)
+./nando-deployment/setup-assets.sh nando-deployment/erpnext-main.env
 ```
 
-Hard-refresh the browser.
+`setup-assets.sh` force-materializes app `dist/` trees, **deletes stale `sites/assets/assets.json`**, then syncs the manifest from `.baked-assets/` in the image or runs `bench build --production --using-cached`.
 
-**Fix (after pulling repo update):** rebuild the image once so `.baked-assets/` is baked at build time; redeploy with `deploy-stack.sh` — materialize syncs `assets.json` automatically.
+If that still fails, rebuild the image once (so `.baked-assets/` exists), then redeploy:
+
+```bash
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-main.env
+```
 
 Verify login bundles exist:
 

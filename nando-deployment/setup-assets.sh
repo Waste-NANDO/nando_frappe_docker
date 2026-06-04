@@ -73,9 +73,23 @@ compose exec backend bash -c '
     app=$(basename "${app_path}")
     rm -rf "sites/assets/${app}"
   done
-  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh 2>/dev/null \
-    || bash /home/frappe/frappe-bench/materialize-assets.sh
+  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh
 '
+
+echo "Verifying login/website bundles on frontend volume..."
+verify_failed=0
+for pattern in \
+  'sites/assets/frappe/dist/css/website.bundle.*.css' \
+  'sites/assets/frappe/dist/css/login.bundle.*.css' \
+  'sites/assets/erpnext/dist/css/erpnext-web.bundle.*.css'; do
+  if ! compose exec frontend bash -c "ls ${pattern} 2>/dev/null | head -1"; then
+    echo "WARNING: missing ${pattern}" >&2
+    verify_failed=1
+  fi
+done
+if [[ "${verify_failed}" -ne 0 ]]; then
+  echo "Try: $0 ${ENV_FILE} --full" >&2
+fi
 
 echo "Clearing caches for ${SITE}..."
 compose exec backend bench --site "${SITE}" clear-cache

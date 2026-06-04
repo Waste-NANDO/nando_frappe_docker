@@ -88,8 +88,17 @@ compose exec backend bash -c '
 '
 
 if [[ "${SKIP_MIGRATE}" -eq 0 ]]; then
+  # Workers/scheduler query DocType while migrate ALTERs it → metadata lock wait.
+  echo "Stopping workers before migrate..."
+  compose stop queue-short queue-long scheduler 2>/dev/null || true
+  migrate_failed=0
   echo "Running migrate on ${SITE}..."
-  compose exec backend bench --site "${SITE}" migrate
+  compose exec backend bench --site "${SITE}" migrate || migrate_failed=1
+  echo "Starting workers after migrate..."
+  compose start queue-short queue-long scheduler 2>/dev/null || true
+  if [[ "${migrate_failed}" -ne 0 ]]; then
+    exit 1
+  fi
 else
   echo "Skipping migrate (--skip-migrate)."
 fi

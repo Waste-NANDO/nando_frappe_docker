@@ -23,6 +23,8 @@ With **`BUILD_ASSETS_IN_IMAGE=yes`** (default in `erpnext-*.env`):
 
 No separate `setup-assets.sh` step unless Desk is still broken.
 
+`deploy-stack.sh` stops **queue workers and scheduler** before `migrate` to avoid MariaDB metadata lock waits on `tabDocType`.
+
 ---
 
 ## Why materialize still exists

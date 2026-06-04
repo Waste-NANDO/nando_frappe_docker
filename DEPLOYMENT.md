@@ -113,15 +113,24 @@ Never commit `github.env` or put the token in `erpnext-*.env`.
 
 ### 3. Verify access
 
-```bash
-git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" \
-  ls-remote https://github.com/Waste-NANDO/nando-erp-crm.git HEAD
+Load the token into your shell first:
 
-git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" \
-  ls-remote https://github.com/Waste-NANDO/nando-erpnext-module.git HEAD
+```bash
+set -a && source nando-deployment/github.env && set +a
+echo "Token length: ${#GITHUB_TOKEN}"   # expect > 20; 0 means not loaded
 ```
 
-Each command should print a commit hash.
+Then test (no username/password prompt if the token is valid):
+
+```bash
+GIT_TERMINAL_PROMPT=0 git -c credential.helper= \
+  ls-remote "https://x-access-token:${GITHUB_TOKEN}@github.com/Waste-NANDO/nando-erp-crm.git" HEAD
+
+GIT_TERMINAL_PROMPT=0 git -c credential.helper= \
+  ls-remote "https://x-access-token:${GITHUB_TOKEN}@github.com/Waste-NANDO/nando-erpnext-module.git" HEAD
+```
+
+Each command should print a commit hash. If you see `terminal prompts disabled`, `GITHUB_TOKEN` is empty in that shell.
 
 ## Generated compose files (security)
 

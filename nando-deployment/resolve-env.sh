@@ -143,6 +143,13 @@ github_repo_canonical_url() {
   echo "https://github.com/${path}.git"
 }
 
+# Transient clone/fetch URL with PAT (never store this as origin).
+github_repo_auth_url() {
+  local canonical
+  canonical="$(github_repo_canonical_url "$1")"
+  echo "https://x-access-token:${GITHUB_TOKEN}@${canonical#https://}"
+}
+
 # Load GITHUB_TOKEN from the environment or nando-deployment/github.env (gitignored).
 load_github_token() {
   local secrets_file="$1"
@@ -165,7 +172,21 @@ Create a fine-grained PAT with read access to the custom app repos, then either:
 or create ${secrets_file} (gitignored):
 
   GITHUB_TOKEN=ghp_...
+
+Then verify (from repo root):
+
+  set -a && source ${secrets_file} && set +a
+  echo "Token length: \${#GITHUB_TOKEN} (should be > 20)"
 EOF
+    return 1
+  fi
+
+  # Trim accidental whitespace from copy/paste.
+  GITHUB_TOKEN="$(echo -n "${GITHUB_TOKEN}" | tr -d '[:space:]')"
+  export GITHUB_TOKEN
+
+  if [[ ${#GITHUB_TOKEN} -lt 20 ]]; then
+    echo "GITHUB_TOKEN looks invalid (length ${#GITHUB_TOKEN}). Check ${secrets_file}" >&2
     return 1
   fi
 }

@@ -23,15 +23,14 @@ fi
 load_github_token "${GITHUB_SECRETS_FILE}"
 
 git_with_github_auth() {
-  GIT_TERMINAL_PROMPT=0 \
-    git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" "$@"
+  GIT_TERMINAL_PROMPT=0 git -c credential.helper= "$@"
 }
 
 mkdir -p "${APPS_ROOT}"
 
 fetch_one_app() {
   local key="$1"
-  local repo branch target_dir current_remote canonical_repo
+  local repo branch target_dir current_remote canonical_repo auth_repo
 
   if ! repo="$(get_custom_app_repo "${key}")"; then
     local prefix
@@ -43,6 +42,7 @@ fetch_one_app() {
   branch="$(get_custom_app_branch "${key}")"
   target_dir="${APPS_ROOT}/${key}"
   canonical_repo="$(github_repo_canonical_url "${repo}")"
+  auth_repo="$(github_repo_auth_url "${repo}")"
 
   if [[ -d "${target_dir}/.git" ]]; then
     current_remote="$(git -C "${target_dir}" remote get-url origin)"
@@ -63,24 +63,30 @@ EOF
       git -C "${target_dir}" remote set-url origin "${canonical_repo}"
     fi
 
-    git_with_github_auth -C "${target_dir}" fetch --tags --prune origin
+    git_with_github_auth -C "${target_dir}" fetch --tags --prune "${auth_repo}" \
+      "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
 
     if [[ -n "${branch}" ]]; then
-      git_with_github_auth -C "${target_dir}" checkout -B "${branch}" "origin/${branch}"
+      git -C "${target_dir}" checkout -B "${branch}" "origin/${branch}"
     else
-      git_with_github_auth -C "${target_dir}" pull --ff-only
+      current_branch="$(git -C "${target_dir}" branch --show-current)"
+      git_with_github_auth -C "${target_dir}" pull --ff-only "${auth_repo}" "${current_branch}"
     fi
   else
     rm -rf "${target_dir}"
 
     if [[ -n "${branch}" ]]; then
-      git_with_github_auth clone --branch "${branch}" "${canonical_repo}" "${target_dir}"
+      git_with_github_auth clone --branch "${branch}" "${auth_repo}" "${target_dir}"
     else
-      git_with_github_auth clone "${canonical_repo}" "${target_dir}"
+      git_with_github_auth clone "${auth_repo}" "${target_dir}"
     fi
+
+    git -C "${target_dir}" remote set-url origin "${canonical_repo}"
   fi
 
-  git_with_github_auth -C "${target_dir}" submodule update --init --recursive
+  git_with_github_auth -C "${target_dir}" \
+    -c "http.extraHeader=Authorization: Bearer ${GITHUB_TOKEN}" \
+    submodule update --init --recursive
 
   cat <<EOF
 Custom app checkout ready:

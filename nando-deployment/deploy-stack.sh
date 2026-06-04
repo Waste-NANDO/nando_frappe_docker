@@ -79,6 +79,8 @@ compose exec backend bash -c '
     rm -rf "sites/assets/${app}"
   done
   FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh
+  bash /home/frappe/frappe-bench/sync-assets-manifest.sh 2>/dev/null \
+    || { rm -f sites/assets/*.json; bench build --production --using-cached; }
 '
 
 if [[ "${SKIP_MIGRATE}" -eq 0 ]]; then

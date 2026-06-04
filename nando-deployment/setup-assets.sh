@@ -76,6 +76,15 @@ compose exec backend bash -c '
   FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh
 '
 
+echo "Syncing assets.json manifest with bundle files on volume..."
+compose exec backend bash /home/frappe/frappe-bench/sync-assets-manifest.sh 2>/dev/null \
+  || compose exec backend bash -c '
+    set -euo pipefail
+    cd /home/frappe/frappe-bench
+    rm -f sites/assets/*.json
+    bench build --production --using-cached
+  '
+
 echo "Verifying login/website bundles on frontend volume..."
 verify_failed=0
 for pattern in \

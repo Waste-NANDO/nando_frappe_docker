@@ -1,7 +1,11 @@
 # Run materialize-assets.sh on deploy so frontend/nginx serves bundles from the shared sites volume.
 # Set MATERIALIZE_ASSETS_ON_START=0 in env to skip (faster up; run setup-assets.sh after).
+#
+# Bind-mount the script from the repo so git pull updates behavior without rebuilding the image.
 services:
   configurator:
+    volumes:
+      - ./materialize-assets.sh:/home/frappe/frappe-bench/materialize-assets.sh:ro
     environment:
       MATERIALIZE_ASSETS_ON_START: ${MATERIALIZE_ASSETS_ON_START:-1}
     command:
@@ -17,3 +21,8 @@ services:
         if [[ "$${MATERIALIZE_ASSETS_ON_START:-1}" = "1" ]]; then
           bash /home/frappe/frappe-bench/materialize-assets.sh;
         fi
+
+  backend:
+    volumes:
+      - ./materialize-assets.sh:/home/frappe/frappe-bench/materialize-assets.sh:ro
+      - ./sync-assets-manifest.sh:/home/frappe/frappe-bench/sync-assets-manifest.sh:ro

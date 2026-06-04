@@ -7,15 +7,28 @@ set -euo pipefail
 BENCH_ROOT="${BENCH_ROOT:-/home/frappe/frappe-bench}"
 ASSETS="${BENCH_ROOT}/sites/assets"
 APPS="${BENCH_ROOT}/apps"
+BAKED="${BENCH_ROOT}/.baked-assets"
 FORCE_MATERIALIZE="${FORCE_MATERIALIZE:-0}"
 
 mkdir -p "${ASSETS}"
 
+resolve_public_dir() {
+  local app_path="$1"
+  local app="$2"
+  local canonical="${app_path}/${app}/public"
+
+  if [[ -d "${canonical}" ]]; then
+    echo "${canonical}"
+    return 0
+  fi
+
+  find "${app_path}" -maxdepth 3 -type d -name public 2>/dev/null | head -1
+}
+
 for app_path in "${APPS}"/*; do
   [[ -d "${app_path}" ]] || continue
   app=$(basename "${app_path}")
-  # maxdepth avoids scanning node_modules under app trees (can hang for many minutes)
-  public=$(find "${app_path}" -maxdepth 3 -type d -name public 2>/dev/null | head -1)
+  public="$(resolve_public_dir "${app_path}" "${app}")"
   [[ -n "${public}" && -d "${public}" ]] || continue
 
   dest="${ASSETS}/${app}"
@@ -53,6 +66,27 @@ for app_path in "${APPS}"/*; do
   fi
 done
 
+materialize_manifests() {
+  if [[ ! -d "${BAKED}" ]]; then
+    echo "[materialize-assets] no baked manifests at ${BAKED} (image built without BUILD_ASSETS_IN_IMAGE?)"
+    return 0
+  fi
+
+  shopt -s nullglob
+  local manifests=("${BAKED}"/*.json)
+  shopt -u nullglob
+
+  if [[ "${#manifests[@]}" -eq 0 ]]; then
+    echo "[materialize-assets] baked manifests directory empty"
+    return 0
+  fi
+
+  for manifest in "${manifests[@]}"; do
+    echo "[materialize-assets] manifest $(basename "${manifest}") <- ${manifest}"
+    cp -a "${manifest}" "${ASSETS}/$(basename "${manifest}")"
+  done
+}
+
 # Code/Text Editor fields load ace.js from sites/assets/frappe/node_modules/ace-builds.
 # The public/ copy above excludes node_modules; nginx (frontend) needs real files on the volume.
 materialize_ace_builds() {
@@ -77,6 +111,7 @@ materialize_ace_builds() {
   cp -a "${ace_src}" "${ace_dest}"
 }
 
+materialize_manifests
 materialize_ace_builds
 
 echo "[materialize-assets] Done"

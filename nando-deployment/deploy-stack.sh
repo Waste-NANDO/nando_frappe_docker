@@ -80,6 +80,11 @@ compose exec backend bash -c '
   done
   FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh 2>/dev/null \
     || bash /home/frappe/frappe-bench/materialize-assets.sh
+  if [[ ! -f sites/assets/assets.json ]]; then
+    echo "No assets.json after materialize; rebuilding manifest from cached dist..."
+    bench build --production --using-cached
+    bash /home/frappe/frappe-bench/materialize-assets.sh
+  fi
 '
 
 if [[ "${SKIP_MIGRATE}" -eq 0 ]]; then
@@ -97,12 +102,18 @@ echo "Restarting frontend..."
 compose restart frontend
 
 echo ""
-echo "Asset check (frontend must show bundle CSS paths):"
-if compose exec frontend bash -c 'ls sites/assets/frappe/dist/css/desk.bundle.*.css 2>/dev/null | head -1'; then
-  :
-else
-  echo "WARNING: desk.bundle CSS missing on frontend volume. Run:" >&2
-  echo "  ./nando-deployment/setup-assets.sh ${ENV_FILE}" >&2
+echo "Asset check (frontend volume — desk + login/website bundles):"
+for pattern in \
+  'sites/assets/frappe/dist/css/desk.bundle.*.css' \
+  'sites/assets/frappe/dist/css/website.bundle.*.css' \
+  'sites/assets/frappe/dist/css/login.bundle.*.css'; do
+  if ! compose exec frontend bash -c "ls ${pattern} 2>/dev/null | head -1"; then
+    echo "WARNING: missing ${pattern} on frontend volume. Run:" >&2
+    echo "  ./nando-deployment/setup-assets.sh ${ENV_FILE}" >&2
+  fi
+done
+if ! compose exec backend test -f sites/assets/assets.json; then
+  echo "WARNING: sites/assets/assets.json missing. Run setup-assets.sh or bench build --using-cached." >&2
 fi
 
 echo ""

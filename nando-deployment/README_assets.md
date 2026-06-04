@@ -111,6 +111,36 @@ After OOM: `sudo dmesg -T | grep -i oom | tail -10`
 2. Confirm backend and frontend share one **`sites` volume** ([DEPLOYMENT.md](../DEPLOYMENT.md))
 3. `restart frontend`
 
+### Browser: MIME type `text/html` on CSS (login / website bundles)
+
+Console example:
+
+```text
+Refused to apply style from '.../website.bundle.NQ53BIH4.css' because its MIME type ('text/html') is not a supported stylesheet MIME type
+```
+
+**Meaning:** nginx returned a **404 HTML page**, not CSS. The login page HTML still references **old bundle hashes** from a stale **`sites/assets/assets.json`** on the volume, while materialize copied **new** `dist/` files with different hashes.
+
+**Fix (current image, no rebuild):**
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+  bench build --production --using-cached
+
+./nando-deployment/setup-assets.sh nando-deployment/erpnext-dev.env
+```
+
+Hard-refresh the browser.
+
+**Fix (after pulling repo update):** rebuild the image once so `.baked-assets/` is baked at build time; redeploy with `deploy-stack.sh` — materialize syncs `assets.json` automatically.
+
+Verify login bundles exist:
+
+```bash
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
+  ls sites/assets/frappe/dist/css/website.bundle.*.css sites/assets/frappe/dist/css/login.bundle.*.css
+```
+
 ### Server Script editor 404 (ace.js)
 
 Materialize copies `ace-builds` into `sites/assets/frappe/node_modules/`. Run `setup-assets.sh` without `--full`.

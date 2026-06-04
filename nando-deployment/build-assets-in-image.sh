@@ -49,3 +49,14 @@ for app_path in apps/*; do
 done
 
 echo "[build-assets] Done"
+
+# Manifest on sites/assets/ (assets.json) must match dist/ hashes. The sites volume
+# persists across deploys and can keep stale manifests; bake a copy outside sites/.
+BAKED="${BENCH_ROOT}/.baked-assets"
+mkdir -p "${BAKED}"
+shopt -s nullglob
+for manifest in "${BENCH_ROOT}/sites/assets/"*.json; do
+  cp -a "${manifest}" "${BAKED}/$(basename "${manifest}")"
+  echo "[build-assets] baked manifest $(basename "${manifest}")"
+done
+shopt -u nullglob

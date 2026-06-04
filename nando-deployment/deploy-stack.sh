@@ -60,15 +60,27 @@ fi
 echo "Deploying stack (project ${COMPOSE_PROJECT_NAME})..."
 compose up -d
 
-echo "Waiting for configurator (materialize assets)..."
-if ! compose ps -a --format '{{.Name}} {{.State}}' | grep -q configurator; then
-  echo "Note: no configurator service found; run setup-assets.sh if Desk assets are missing."
+echo "Waiting for configurator..."
+configurator_id="$(compose ps -aq configurator 2>/dev/null | head -1 || true)"
+if [[ -n "${configurator_id}" ]]; then
+  echo "Configurator container: ${configurator_id}"
+  docker wait "${configurator_id}" >/dev/null 2>&1 || true
 else
-  configurator_id="$(compose ps -aq configurator | head -1)"
-  if [[ -n "${configurator_id}" ]]; then
-    docker wait "${configurator_id}" >/dev/null 2>&1 || true
-  fi
+  echo "Note: no configurator container id (continuing with explicit materialize)."
 fi
+
+echo "Materializing assets onto sites volume (force sync from image)..."
+compose exec backend bash -c '
+  set -euo pipefail
+  cd /home/frappe/frappe-bench
+  for app_path in apps/*; do
+    [[ -d "${app_path}" ]] || continue
+    app=$(basename "${app_path}")
+    rm -rf "sites/assets/${app}"
+  done
+  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh 2>/dev/null \
+    || bash /home/frappe/frappe-bench/materialize-assets.sh
+'
 
 if [[ "${SKIP_MIGRATE}" -eq 0 ]]; then
   echo "Running migrate on ${SITE}..."
@@ -80,6 +92,18 @@ fi
 echo "Clearing cache..."
 compose exec backend bench --site "${SITE}" clear-cache
 compose exec backend bench --site "${SITE}" clear-website-cache
+
+echo "Restarting frontend..."
+compose restart frontend
+
+echo ""
+echo "Asset check (frontend must show bundle CSS paths):"
+if compose exec frontend bash -c 'ls sites/assets/frappe/dist/css/desk.bundle.*.css 2>/dev/null | head -1'; then
+  :
+else
+  echo "WARNING: desk.bundle CSS missing on frontend volume. Run:" >&2
+  echo "  ./nando-deployment/setup-assets.sh ${ENV_FILE}" >&2
+fi
 
 echo ""
 echo "Deploy complete."

@@ -65,7 +65,17 @@ else
 fi
 
 echo "Materializing assets onto the shared sites volume..."
-compose exec backend bash /home/frappe/frappe-bench/materialize-assets.sh
+compose exec backend bash -c '
+  set -euo pipefail
+  cd /home/frappe/frappe-bench
+  for app_path in apps/*; do
+    [[ -d "${app_path}" ]] || continue
+    app=$(basename "${app_path}")
+    rm -rf "sites/assets/${app}"
+  done
+  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh 2>/dev/null \
+    || bash /home/frappe/frappe-bench/materialize-assets.sh
+'
 
 echo "Clearing caches for ${SITE}..."
 compose exec backend bench --site "${SITE}" clear-cache
@@ -75,4 +85,5 @@ echo "Restarting frontend..."
 compose restart frontend
 
 echo "Done. Verify:"
-compose exec frontend bash -c 'ls sites/assets/frappe/dist/css/website.bundle.*.css | head -1'
+compose exec frontend bash -c 'ls sites/assets/frappe/dist/css/desk.bundle.*.css | head -1'
+compose exec backend bash -c 'ls apps/frappe/frappe/public/dist/css/desk.bundle.*.css 2>/dev/null | head -1 || ls apps/frappe/public/dist/css/desk.bundle.*.css 2>/dev/null | head -1'

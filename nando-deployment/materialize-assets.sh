@@ -7,6 +7,7 @@ set -euo pipefail
 BENCH_ROOT="${BENCH_ROOT:-/home/frappe/frappe-bench}"
 ASSETS="${BENCH_ROOT}/sites/assets"
 APPS="${BENCH_ROOT}/apps"
+FORCE_MATERIALIZE="${FORCE_MATERIALIZE:-0}"
 
 mkdir -p "${ASSETS}"
 
@@ -20,7 +21,9 @@ for app_path in "${APPS}"/*; do
   dest="${ASSETS}/${app}"
   needs_copy=0
 
-  if [[ -L "${dest}" ]]; then
+  if [[ "${FORCE_MATERIALIZE}" = "1" ]]; then
+    needs_copy=1
+  elif [[ -L "${dest}" ]]; then
     needs_copy=1
   elif [[ ! -e "${dest}" ]]; then
     needs_copy=1

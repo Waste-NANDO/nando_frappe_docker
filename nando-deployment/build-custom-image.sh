@@ -203,9 +203,7 @@ Or manually:
   3. bench --site <site> clear-cache — if Desk looks stale
 
 Assets are built into the image (BUILD_ASSETS_IN_IMAGE=${BUILD_ASSETS_IN_IMAGE}).
-You do not need setup-assets.sh after a normal image deploy unless Desk is still broken.
-Use: ./nando-deployment/setup-assets.sh ${ENV_FILE} --full
-  only when changing app JS without rebuilding the image.
+deploy-stack.sh force-materializes assets and restarts frontend after up -d.
 EOF
   if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
     read -r -a install_apps <<< "$(resolve_site_install_apps)"

@@ -35,10 +35,15 @@ CUSTOM_TAG="${CUSTOM_TAG:-${ERPNEXT_VERSION}-custom}"
 FRAPPE_BRANCH="${FRAPPE_BRANCH:-version-16}"
 BUILD_ASSETS_IN_IMAGE="${BUILD_ASSETS_IN_IMAGE:-yes}"
 BENCH_BUILD_NODE_MEMORY_MB="${BENCH_BUILD_NODE_MEMORY_MB:-6144}"
+BUILD_HRMS_FULL="${BUILD_HRMS_FULL:-0}"
 
 build_assets_arg=0
+build_hrms_full_arg=0
 if build_assets_in_image_enabled "${BUILD_ASSETS_IN_IMAGE}"; then
   build_assets_arg=1
+fi
+if build_assets_in_image_enabled "${BUILD_HRMS_FULL}"; then
+  build_hrms_full_arg=1
 fi
 
 render_compose() {
@@ -125,6 +130,9 @@ if should_build_image; then
   echo "Building image (BUILD_ASSETS_IN_IMAGE=${build_assets_arg}, node heap ${BENCH_BUILD_NODE_MEMORY_MB}MB)..."
   if [[ "${build_assets_arg}" -eq 1 ]]; then
     echo "Asset compile runs inside docker build — expect 10–20 minutes with HRMS."
+    if [[ "${build_hrms_full_arg}" -eq 0 ]]; then
+      echo "HRMS PWA/roster skipped in image (BUILD_HRMS_FULL=0); Desk HRMS bundles still built."
+    fi
   fi
 
   docker buildx build \
@@ -134,6 +142,7 @@ if should_build_image; then
     --build-arg APPS_JSON_BASE64="${APPS_JSON_BASE64}" \
     --build-arg BUILD_ASSETS_IN_IMAGE="${build_assets_arg}" \
     --build-arg BENCH_BUILD_NODE_MEMORY_MB="${BENCH_BUILD_NODE_MEMORY_MB}" \
+    --build-arg BUILD_HRMS_FULL="${build_hrms_full_arg}" \
     --tag "${CUSTOM_IMAGE}:${CUSTOM_TAG}" \
     --file "${REPO_ROOT}/images/layered/Containerfile" \
     "${REPO_ROOT}"

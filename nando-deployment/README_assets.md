@@ -75,12 +75,15 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 ## Env vars
 
 ```env
-BUILD_ASSETS_IN_IMAGE=yes      # bench build during docker build (default)
-BENCH_BUILD_NODE_MEMORY_MB=6144   # NODE_OPTIONS heap for image build
-MATERIALIZE_ASSETS_ON_START=1  # configurator materialize on compose up (default)
+BUILD_ASSETS_IN_IMAGE=yes           # bench build during docker build (default)
+BENCH_BUILD_NODE_MEMORY_MB=6144     # Node heap during image build
+BUILD_HRMS_FULL=0                   # 0 = skip HRMS PWA/roster in image (recommended)
+MATERIALIZE_ASSETS_ON_START=1       # configurator materialize on compose up (default)
 ```
 
-Set `BUILD_ASSETS_IN_IMAGE=no` on small hosts if docker build OOMs; use `setup-assets.sh --full` post-deploy instead.
+**HRMS note:** Full `bench build --production` runs `yarn build-pwa && yarn build-roster` for HRMS, which often fails in Docker (`yarn run production --run-build-command`). With `BUILD_HRMS_FULL=0` (default), the image build uses esbuild for HRMS **Desk** bundles only. HRMS in Desk usually works; separate HRMS PWA/roster UIs may need a one-time `setup-assets.sh --full` on the server if you use them.
+
+Set `BUILD_HRMS_FULL=1` to attempt the full HRMS build in Docker (needs plenty of RAM; may still fail).
 
 ---
 

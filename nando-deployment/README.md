@@ -18,7 +18,7 @@ Edit passwords on the server. Do not commit real secrets.
 |--------|---------|
 | [`build-custom-image.sh`](build-custom-image.sh) | Fetch app (if enabled), build image (ERPNext + optional custom app + HRMS), render compose |
 | [`render-compose.sh`](render-compose.sh) | Render compose YAML only |
-| [`fetch-custom-app.sh`](fetch-custom-app.sh) | Clone/update `custom-app-src` (dev) |
+| [`fetch-custom-app.sh`](fetch-custom-app.sh) | Clone/update apps into `custom-apps/<key>/` (reads `CUSTOM_APP_KEYS`) |
 | [`materialize-assets.sh`](materialize-assets.sh) | Copy `apps/*/public` (incl. `dist/`) into `sites/assets` on the shared volume |
 | [`setup-assets.sh`](setup-assets.sh) | `bench build --force` + materialize + clear-cache (run on VM after deploy) |
 | [`resolve-env.sh`](resolve-env.sh) | Shared env resolution (sourced by scripts) |
@@ -35,4 +35,5 @@ Regenerate after env or compose changes. Never commit.
 ## Quick reference
 
 [`docker_commands.md`](docker_commands.md)  
-[`README_workspaces.md`](README_workspaces.md) — public/private workspaces, roles, v16 Desk visibility
+[`README_workspaces.md`](README_workspaces.md) — public/private workspaces, roles, v16 Desk visibility  
+[`README_migrate_customizations.md`](README_migrate_customizations.md) — dev → main: empty config app, fixtures, DocTypes, scripts

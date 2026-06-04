@@ -5,7 +5,7 @@ Two isolated Frappe/ERPNext stacks on one server:
 | Stack | URL | Compose project | Purpose |
 |-------|-----|-----------------|--------|
 | **Dev** | `https://apps.internal.nandoai.com:3003` | `erpnext` | Custom app, Desk customizations, test data |
-| **Main** | `https://apps.internal.nandoai.com:3000` | `erpnext-main` | Stock ERPNext, fresh site (no custom app yet) |
+| **Main** | `https://apps.internal.nandoai.com:3000` | `erpnext-main` | ERPNext + HRMS + `nando_crm` (after migration) |
 
 Both use the same hostname and Frappe site name (`apps.internal.nandoai.com`). Isolation is by **port**, **Compose project**, and **separate volumes** (MariaDB + `sites`).
 
@@ -34,7 +34,7 @@ nando-deployment/
 ├── erpnext-main.yaml           # Generated main compose (gitignored)
 ├── build-custom-image.sh       # Build dev image + render dev compose
 ├── render-compose.sh           # Render compose only (main or after env edits)
-├── fetch-custom-app.sh         # Clone/update custom app (dev only)
+├── fetch-custom-app.sh         # Clone/update custom apps into custom-apps/ (multi-app)
 ├── resolve-env.sh              # Shared env file resolution
 ├── docker_commands.md          # Quick command reference
 └── README.md                   # Index of scripts and env files
@@ -134,7 +134,7 @@ ssh-add ~/.ssh/<github-key>
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ```
 
-This fetches `custom-app-src`, builds `nando-erpnext-custom:<tag>`, and writes `nando-deployment/erpnext-dev.yaml`.
+This fetches repos into `custom-apps/` (see `CUSTOM_APP_KEYS`), builds `nando-erpnext-custom:<tag>`, and writes `nando-deployment/erpnext-dev.yaml`.
 
 ### 3. Deploy
 
@@ -159,11 +159,11 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
     apps.internal.nandoai.com
 ```
 
-Install custom app once:
+Install custom apps once (skip any already installed):
 
 ```bash
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  bench --site apps.internal.nandoai.com install-app nando_fulfillment
+  bench --site apps.internal.nandoai.com install-app nando_crm nando_fulfillment
 ```
 
 ### 5. Enable Server Scripts (dev)
@@ -184,7 +184,18 @@ nano nando-deployment/erpnext-main.env
 # Set CHANGE_ME_MAIN_DB_PASSWORD, GCS_BUCKET
 ```
 
-### 2. Render compose (no custom image build)
+### 2. Build image and render compose
+
+Main uses the same custom image build when `INCLUDE_CUSTOM_APP=yes`:
+
+```bash
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/<github-key>
+
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-main.env
+```
+
+Or render compose only if the image is already built and env unchanged:
 
 ```bash
 ./nando-deployment/render-compose.sh nando-deployment/erpnext-main.env
@@ -213,7 +224,7 @@ sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main
     apps.internal.nandoai.com
 ```
 
-No `install-app` for the custom app on main until you enable it (see [Promoting customizations](#promoting-customizations-to-main)).
+No `install-app` for custom apps on main until customizations are exported from dev (see [Promoting customizations](#promoting-customizations-to-main)). When ready: `install-app nando_crm`.
 
 ### 6. Verify
 
@@ -236,42 +247,48 @@ See [`nando-deployment/docker_commands.md`](nando-deployment/docker_commands.md)
 
 ## Custom app workflow (dev)
 
-1. Set `CUSTOM_APP_BRANCH` in `erpnext-dev.env` if needed (e.g. `develop`).
+Two custom apps are configured by default:
+
+| App key | Repo | Frappe app name |
+|---------|------|-----------------|
+| `nando_crm` | `Waste-NANDO/nando-erp-crm` | `nando_crm` |
+| `nando_fulfillment` | `Waste-NANDO/nando-erpnext-module` | `nando_fulfillment` |
+
+Env vars in `erpnext-dev.env`:
+
+```env
+CUSTOM_APP_KEYS=nando_crm,nando_fulfillment
+SITE_INSTALL_APPS=nando_crm,nando_fulfillment
+NANDO_CRM_REPO=git@github.com:Waste-NANDO/nando-erp-crm.git
+NANDO_CRM_BRANCH=main
+NANDO_FULFILLMENT_REPO=git@github.com:Waste-NANDO/nando-erpnext-module.git
+NANDO_FULFILLMENT_BRANCH=main
+```
+
+Steps after app repo changes:
+
+1. Set branch vars if needed (`NANDO_CRM_BRANCH`, etc.).
 2. `./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-dev.env`
 3. Bump `CUSTOM_TAG`, rebuild: `./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env`
 4. Redeploy dev stack.
 5. `bench --site apps.internal.nandoai.com migrate`
 
+Clones land under `nando-deployment/custom-apps/<app_key>/`. Legacy `CUSTOM_APP_REPO` / `CUSTOM_APP_NAME` still work for a single app.
+
 App code must live in the **image** (`apps.json` at build time), not only inside a running container.
 
 ## Promoting customizations to main
 
-Dev Desk changes (Custom Fields, Server Scripts, etc.) live in the **dev database**. They do not copy to main automatically.
+Dev Desk changes (Custom Fields, Server Scripts, custom DocTypes, roles, workspaces, reports, etc.) live in the **dev database**. They do not copy to main automatically.
 
-**Recommended path:**
+**Full guide:** [`nando-deployment/README_migrate_customizations.md`](nando-deployment/README_migrate_customizations.md) — export CRM customizations into **`nando_crm`**, inventory, and main rollout.
 
-1. Add fixture types to `hooks.py` in `nando-erpnext-module`:
+**Short path:**
 
-   ```python
-   fixtures = [
-       "Custom Field",
-       "Property Setter",
-       "Custom Script",
-       "Client Script",
-       "Server Script",
-   ]
-   ```
-
-2. On dev:
-
-   ```bash
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-     bench --site apps.internal.nandoai.com export-fixtures
-   ```
-
-3. Commit fixture JSON in the custom app repo; merge branch (`develop` → `main`).
-
-4. When ready on main: set `INCLUDE_CUSTOM_APP=yes` in `erpnext-main.env`, rebuild image, `install-app nando_fulfillment`, `migrate` / `import-fixtures`.
+1. Ensure `fixtures = [...]` in `nando-erp-crm` `hooks.py` (module filter `NANDO_CRM`).
+2. On dev: reassign GUI customizations to module **NANDO_CRM**; `export-doc` / developer-mode save for DocTypes; `export-fixtures`.
+3. Commit in `nando-erp-crm`; rebuild dev image and verify `:3003`.
+4. On main: `build-custom-image.sh` with `CUSTOM_APP_KEYS=nando_crm`, deploy, `install-app nando_crm`, `migrate` / `import-fixtures`, enable `server_script_enabled`.
 
 Transactional data (customers, orders, stock) requires explicit export/import — not fixtures.
 

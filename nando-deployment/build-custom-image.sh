@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/resolve-env.sh"
 
 ENV_FILE="$(resolve_env_file "${SCRIPT_DIR}" "${1:-}")"
 FETCH_SCRIPT="${SCRIPT_DIR}/fetch-custom-app.sh"
-LOCAL_APP_DIR="${SCRIPT_DIR}/custom-app-src"
+LOCAL_APPS_DIR="${SCRIPT_DIR}/custom-apps"
 
 set -a
 # shellcheck disable=SC1090
@@ -30,8 +30,6 @@ INCLUDE_CUSTOM_APP="${INCLUDE_CUSTOM_APP:-yes}"
 INCLUDE_HRMS="${INCLUDE_HRMS:-no}"
 HRMS_REPO="${HRMS_REPO:-https://github.com/frappe/hrms.git}"
 HRMS_BRANCH="${HRMS_BRANCH:-version-16}"
-CUSTOM_APP_REPO="${CUSTOM_APP_REPO:-git@github.com:Waste-NANDO/nando-erpnext-module.git}"
-CUSTOM_APP_BRANCH="${CUSTOM_APP_BRANCH:-}"
 CUSTOM_IMAGE="${CUSTOM_IMAGE:-nando-erpnext-custom}"
 CUSTOM_TAG="${CUSTOM_TAG:-${ERPNEXT_VERSION}-custom}"
 FRAPPE_BRANCH="${FRAPPE_BRANCH:-version-16}"
@@ -50,6 +48,8 @@ render_compose() {
 
 write_apps_json() {
   local outfile="$1"
+  local first=1
+  local key
 
   {
     echo '['
@@ -57,16 +57,18 @@ write_apps_json() {
     echo '    "url": "https://github.com/frappe/erpnext.git",'
     echo "    \"branch\": \"${ERPNEXT_VERSION}\""
     echo -n '  }'
+    first=0
 
     if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
-      local custom_branch_line=""
-      if [[ -n "${CUSTOM_APP_BRANCH}" ]]; then
-        custom_branch_line=$',\n    "branch": "'"${CUSTOM_APP_BRANCH}"'"'
-      fi
-      echo ','
-      echo '  {'
-      echo '    "url": "file:///opt/frappe/custom-app-src"'"${custom_branch_line}"
-      echo -n '  }'
+      read -r -a app_keys <<< "$(resolve_custom_app_keys)"
+      for key in "${app_keys[@]}"; do
+        key="$(echo "${key}" | xargs)"
+        [[ -z "${key}" ]] && continue
+        echo ','
+        echo '  {'
+        echo "    \"url\": \"file:///opt/frappe/custom-apps/${key}\""
+        echo -n '  }'
+      done
     fi
 
     if include_hrms_enabled "${INCLUDE_HRMS}"; then
@@ -95,10 +97,15 @@ if should_build_image; then
 
     "${FETCH_SCRIPT}" "${ENV_FILE}"
 
-    if [[ ! -d "${LOCAL_APP_DIR}/.git" ]]; then
-      echo "Local custom app checkout is missing: ${LOCAL_APP_DIR}" >&2
-      exit 1
-    fi
+    read -r -a app_keys <<< "$(resolve_custom_app_keys)"
+    for key in "${app_keys[@]}"; do
+      key="$(echo "${key}" | xargs)"
+      [[ -z "${key}" ]] && continue
+      if [[ ! -d "${LOCAL_APPS_DIR}/${key}/.git" ]]; then
+        echo "Custom app checkout is missing: ${LOCAL_APPS_DIR}/${key}" >&2
+        exit 1
+      fi
+    done
   fi
 
   apps_json="$(mktemp)"
@@ -137,10 +144,21 @@ PULL_POLICY=${PULL_POLICY:-missing}
 EOF
 
 if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
-  echo "CUSTOM_APP_REPO=${CUSTOM_APP_REPO}"
-  if [[ -n "${CUSTOM_APP_BRANCH}" ]]; then
-    echo "CUSTOM_APP_BRANCH=${CUSTOM_APP_BRANCH}"
-  fi
+  echo "CUSTOM_APP_KEYS=${CUSTOM_APP_KEYS:-${CUSTOM_APP_NAME:-nando_fulfillment}}"
+  read -r -a app_keys <<< "$(resolve_custom_app_keys)"
+  for key in "${app_keys[@]}"; do
+    key="$(echo "${key}" | xargs)"
+    [[ -z "${key}" ]] && continue
+    prefix="$(custom_app_env_prefix "${key}")"
+    repo_var="${prefix}_REPO"
+    branch_var="${prefix}_BRANCH"
+    if [[ -n "${!repo_var:-}" ]]; then
+      echo "${repo_var}=${!repo_var}"
+    fi
+    if [[ -n "${!branch_var:-}" ]]; then
+      echo "${branch_var}=${!branch_var}"
+    fi
+  done
 fi
 
 if include_hrms_enabled "${INCLUDE_HRMS}"; then
@@ -157,7 +175,16 @@ Then:
   3. Run `bench --site <site> migrate` after app updates.
 EOF
   if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
-    echo "     - bench --site <site> install-app ${CUSTOM_APP_NAME:-<custom_app_name>}"
+    read -r -a install_apps <<< "$(resolve_site_install_apps)"
+    install_list=""
+    for app in "${install_apps[@]}"; do
+      app="$(echo "${app}" | xargs)"
+      [[ -z "${app}" ]] && continue
+      install_list="${install_list} ${app}"
+    done
+    if [[ -n "${install_list}" ]]; then
+      echo "     - bench --site <site> install-app${install_list}"
+    fi
   fi
   if include_hrms_enabled "${INCLUDE_HRMS}"; then
     echo '     - bench --site <site> install-app hrms'

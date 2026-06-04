@@ -27,6 +27,10 @@ See [DEPLOYMENT.md](../DEPLOYMENT.md) for full build/redeploy steps.
 ## Dev (port 3003, project `erpnext`)
 
 ```bash
+# Install custom apps (once per site; skip already installed)
+sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+  bench --site apps.internal.nandoai.com install-app nando_crm nando_fulfillment
+
 # Deploy / restart
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 
@@ -54,6 +58,10 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 ## Main (port 3000, project `erpnext-main`)
 
 ```bash
+# Install nando_crm (once per site, after image includes the app)
+sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+  bench --site apps.internal.nandoai.com install-app nando_crm
+
 # Deploy / restart
 sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
 

@@ -8,6 +8,9 @@ nando-deployment/erpnext-dev.yaml
 nando-deployment/erpnext.yaml
 nando-deployment/erpnext-main.yaml
 nando-deployment/backups/
+nando-deployment/custom-apps/*
+!nando-deployment/custom-apps/.gitkeep
+# Legacy single-app checkout (deprecated — use custom-apps/)
 nando-deployment/custom-app-src/*
 !nando-deployment/custom-app-src/.gitkeep
 nando-deployment/*.json

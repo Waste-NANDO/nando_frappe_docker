@@ -26,11 +26,50 @@ git_with_github_auth() {
   GIT_TERMINAL_PROMPT=0 git -c credential.helper= "$@"
 }
 
+list_remote_branches() {
+  local auth_repo="$1"
+  git_with_github_auth ls-remote --heads "${auth_repo}" | awk -F/ '{print $NF}'
+}
+
+resolve_remote_branch() {
+  local auth_repo="$1"
+  local branch="$2"
+  local env_prefix="$3"
+
+  if [[ -n "${branch}" ]]; then
+    if git_with_github_auth ls-remote --exit-code --heads "${auth_repo}" "refs/heads/${branch}" >/dev/null 2>&1; then
+      echo "${branch}"
+      return 0
+    fi
+
+    cat >&2 <<EOF
+Branch '${branch}' not found for ${env_prefix}.
+
+Remote branches:
+$(list_remote_branches "${auth_repo}" | sed 's/^/  /')
+
+Update ${env_prefix}_BRANCH in ${ENV_FILE}.
+EOF
+    return 1
+  fi
+
+  local default_branch
+  default_branch="$(
+    git_with_github_auth ls-remote --symref "${auth_repo}" HEAD \
+      | awk '/^ref:/ { sub(/^refs\/heads\//, "", $2); print $2; exit }'
+  )"
+  if [[ -z "${default_branch}" ]]; then
+    echo "Could not determine default branch for ${auth_repo}" >&2
+    return 1
+  fi
+  echo "${default_branch}"
+}
+
 mkdir -p "${APPS_ROOT}"
 
 fetch_one_app() {
   local key="$1"
-  local repo branch target_dir current_remote canonical_repo auth_repo
+  local repo branch target_dir current_remote canonical_repo auth_repo env_prefix
 
   if ! repo="$(get_custom_app_repo "${key}")"; then
     local prefix
@@ -39,10 +78,11 @@ fetch_one_app() {
     return 1
   fi
 
-  branch="$(get_custom_app_branch "${key}")"
+  env_prefix="$(custom_app_env_prefix "${key}")"
   target_dir="${APPS_ROOT}/${key}"
   canonical_repo="$(github_repo_canonical_url "${repo}")"
   auth_repo="$(github_repo_auth_url "${repo}")"
+  branch="$(resolve_remote_branch "${auth_repo}" "$(get_custom_app_branch "${key}")" "${env_prefix}")"
 
   if [[ -d "${target_dir}/.git" ]]; then
     current_remote="$(git -C "${target_dir}" remote get-url origin)"

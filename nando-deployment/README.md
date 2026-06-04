@@ -12,6 +12,8 @@ Operational guide: **[../DEPLOYMENT.md](../DEPLOYMENT.md)**
 
 Edit passwords on the server. Do not commit real secrets.
 
+GitHub PAT for private custom app repos: copy [`github.env.example`](github.env.example) to `github.env` (gitignored) or `export GITHUB_TOKEN=...`. See [DEPLOYMENT.md](../DEPLOYMENT.md#github-authentication).
+
 ## Scripts
 
 | Script | Purpose |

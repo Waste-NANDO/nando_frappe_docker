@@ -35,6 +35,7 @@ nando-deployment/
 ├── build-custom-image.sh       # Build dev image + render dev compose
 ├── render-compose.sh           # Render compose only (main or after env edits)
 ├── fetch-custom-app.sh         # Clone/update custom apps into custom-apps/ (multi-app)
+├── github.env.example          # Template for GITHUB_TOKEN (copy to github.env on server)
 ├── resolve-env.sh              # Shared env file resolution
 ├── docker_commands.md          # Quick command reference
 └── README.md                   # Index of scripts and env files
@@ -44,7 +45,7 @@ nando-deployment/
 
 - Docker Engine and Docker Compose v2
 - Private CA files in `nando-deployment/certs/`: `key.pem`, `nando-erp-server.crt`
-- For dev custom app build: SSH agent with GitHub deploy key for `nando-erpnext-module`
+- For dev custom app build: GitHub PAT with read access to `Waste-NANDO/nando-erp-crm` and `Waste-NANDO/nando-erpnext-module` (see [GitHub authentication](#github-authentication))
 
 ## Environment files
 
@@ -79,6 +80,48 @@ Edit on the server (never commit real passwords). Templates are committed with `
 ### Legacy `erpnext.env`
 
 Same shape as `erpnext-dev.env`. Scripts prefer `erpnext-dev.env` when no file argument is passed; `erpnext.env` still works with a deprecation note.
+
+## GitHub authentication
+
+Custom app repos are private. `fetch-custom-app.sh` clones over HTTPS using a **Personal Access Token** — no SSH agent or deploy keys.
+
+### 1. Create a fine-grained PAT
+
+On GitHub: **Settings → Developer settings → Fine-grained tokens**
+
+- Resource owner: `Waste-NANDO` (or your user if repos are under it)
+- Repository access: `nando-erp-crm`, `nando-erpnext-module`, and `nando_frappe_docker` (if you pull this repo via HTTPS)
+- Permissions: **Contents → Read-only**
+
+### 2. Configure the token on the server
+
+Either export it for the session:
+
+```bash
+export GITHUB_TOKEN=ghp_...
+```
+
+Or create a gitignored secrets file (recommended):
+
+```bash
+cp nando-deployment/github.env.example nando-deployment/github.env
+nano nando-deployment/github.env   # set GITHUB_TOKEN=ghp_...
+chmod 600 nando-deployment/github.env
+```
+
+Never commit `github.env` or put the token in `erpnext-*.env`.
+
+### 3. Verify access
+
+```bash
+git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" \
+  ls-remote https://github.com/Waste-NANDO/nando-erp-crm.git HEAD
+
+git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" \
+  ls-remote https://github.com/Waste-NANDO/nando-erpnext-module.git HEAD
+```
+
+Each command should print a commit hash.
 
 ## Generated compose files (security)
 
@@ -128,8 +171,8 @@ nano nando-deployment/erpnext-dev.env
 ### 2. Build image and render compose
 
 ```bash
-eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/<github-key>
+# If not using nando-deployment/github.env:
+# export GITHUB_TOKEN=ghp_...
 
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ```
@@ -189,8 +232,8 @@ nano nando-deployment/erpnext-main.env
 Main uses the same custom image build when `INCLUDE_CUSTOM_APP=yes`:
 
 ```bash
-eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/<github-key>
+# If not using nando-deployment/github.env:
+# export GITHUB_TOKEN=ghp_...
 
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-main.env
 ```
@@ -259,9 +302,9 @@ Env vars in `erpnext-dev.env`:
 ```env
 CUSTOM_APP_KEYS=nando_crm,nando_fulfillment
 SITE_INSTALL_APPS=nando_crm,nando_fulfillment
-NANDO_CRM_REPO=git@github.com:Waste-NANDO/nando-erp-crm.git
+NANDO_CRM_REPO=https://github.com/Waste-NANDO/nando-erp-crm.git
 NANDO_CRM_BRANCH=main
-NANDO_FULFILLMENT_REPO=git@github.com:Waste-NANDO/nando-erpnext-module.git
+NANDO_FULFILLMENT_REPO=https://github.com/Waste-NANDO/nando-erpnext-module.git
 NANDO_FULFILLMENT_BRANCH=main
 ```
 

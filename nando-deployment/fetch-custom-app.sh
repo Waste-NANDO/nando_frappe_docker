@@ -7,6 +7,7 @@ source "${SCRIPT_DIR}/resolve-env.sh"
 
 ENV_FILE="$(resolve_env_file "${SCRIPT_DIR}" "${1:-}")"
 APPS_ROOT="${SCRIPT_DIR}/custom-apps"
+GITHUB_SECRETS_FILE="${SCRIPT_DIR}/github.env"
 
 set -a
 # shellcheck disable=SC1090
@@ -19,32 +20,18 @@ if ! include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
   exit 0
 fi
 
-if [[ -z "${SSH_AUTH_SOCK:-}" ]]; then
-  cat >&2 <<'EOF'
-SSH agent not detected.
+load_github_token "${GITHUB_SECRETS_FILE}"
 
-Start an agent, add the GitHub deploy key, and rerun:
-  eval "$(ssh-agent -s)"
-  ssh-add ~/.ssh/<github-key>
-EOF
-  exit 1
-fi
-
-if ! ssh-add -l >/dev/null 2>&1; then
-  cat >&2 <<'EOF'
-No SSH keys are currently loaded in the agent.
-
-Load the GitHub deploy key, then rerun:
-  ssh-add ~/.ssh/<github-key>
-EOF
-  exit 1
-fi
+git_with_github_auth() {
+  GIT_TERMINAL_PROMPT=0 \
+    git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" "$@"
+}
 
 mkdir -p "${APPS_ROOT}"
 
 fetch_one_app() {
   local key="$1"
-  local repo branch target_dir current_remote
+  local repo branch target_dir current_remote canonical_repo
 
   if ! repo="$(get_custom_app_repo "${key}")"; then
     local prefix
@@ -55,40 +42,45 @@ fetch_one_app() {
 
   branch="$(get_custom_app_branch "${key}")"
   target_dir="${APPS_ROOT}/${key}"
+  canonical_repo="$(github_repo_canonical_url "${repo}")"
 
   if [[ -d "${target_dir}/.git" ]]; then
     current_remote="$(git -C "${target_dir}" remote get-url origin)"
-    if [[ "${current_remote}" != "${repo}" ]]; then
+    if ! repos_match "${current_remote}" "${repo}"; then
       cat >&2 <<EOF
 Existing checkout for ${key} uses a different remote:
   ${current_remote}
 
 Expected:
-  ${repo}
+  ${canonical_repo}
 
 Remove ${target_dir} if you want to replace it.
 EOF
       return 1
     fi
 
-    git -C "${target_dir}" fetch --tags --prune origin
+    if [[ "${current_remote}" != "${canonical_repo}" ]]; then
+      git -C "${target_dir}" remote set-url origin "${canonical_repo}"
+    fi
+
+    git_with_github_auth -C "${target_dir}" fetch --tags --prune origin
 
     if [[ -n "${branch}" ]]; then
-      git -C "${target_dir}" checkout -B "${branch}" "origin/${branch}"
+      git_with_github_auth -C "${target_dir}" checkout -B "${branch}" "origin/${branch}"
     else
-      git -C "${target_dir}" pull --ff-only
+      git_with_github_auth -C "${target_dir}" pull --ff-only
     fi
   else
     rm -rf "${target_dir}"
 
     if [[ -n "${branch}" ]]; then
-      git clone --branch "${branch}" "${repo}" "${target_dir}"
+      git_with_github_auth clone --branch "${branch}" "${canonical_repo}" "${target_dir}"
     else
-      git clone "${repo}" "${target_dir}"
+      git_with_github_auth clone "${canonical_repo}" "${target_dir}"
     fi
   fi
 
-  git -C "${target_dir}" submodule update --init --recursive
+  git_with_github_auth -C "${target_dir}" submodule update --init --recursive
 
   cat <<EOF
 Custom app checkout ready:

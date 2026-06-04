@@ -114,6 +114,62 @@ resolve_site_install_apps() {
   resolve_custom_app_keys
 }
 
+# owner/repo path from git@, https://, or credentialed https:// URLs.
+normalize_repo_path() {
+  local url="$1"
+  url="$(echo "${url}" | sed -E 's#^https://[^@]+@#https://#')"
+  url="${url%.git}"
+  case "${url}" in
+    git@github.com:*)
+      echo "${url#git@github.com:}"
+      ;;
+    https://github.com/*)
+      echo "${url#https://github.com/}"
+      ;;
+    *)
+      echo "${url}"
+      ;;
+  esac
+}
+
+repos_match() {
+  [[ "$(normalize_repo_path "$1")" == "$(normalize_repo_path "$2")" ]]
+}
+
+# Canonical HTTPS remote without embedded credentials.
+github_repo_canonical_url() {
+  local path
+  path="$(normalize_repo_path "$1")"
+  echo "https://github.com/${path}.git"
+}
+
+# Load GITHUB_TOKEN from the environment or nando-deployment/github.env (gitignored).
+load_github_token() {
+  local secrets_file="$1"
+
+  if [[ -z "${GITHUB_TOKEN:-}" && -f "${secrets_file}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${secrets_file}"
+    set +a
+  fi
+
+  if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+    cat >&2 <<EOF
+GITHUB_TOKEN is not set.
+
+Create a fine-grained PAT with read access to the custom app repos, then either:
+
+  export GITHUB_TOKEN=ghp_...
+
+or create ${secrets_file} (gitignored):
+
+  GITHUB_TOKEN=ghp_...
+EOF
+    return 1
+  fi
+}
+
 # Write docker compose config output; handles root-owned yaml from earlier sudo runs.
 write_compose_output() {
   local output_path="$1"

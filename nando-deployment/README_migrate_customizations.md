@@ -42,12 +42,9 @@ Local clones: `nando-deployment/custom-apps/<app_key>/` (via `fetch-custom-app.s
 
 ## Phase 1 — Rebuild dev with both apps
 
-On the server (SSH agent + deploy key loaded):
+On the server (PAT configured — see [DEPLOYMENT.md](../DEPLOYMENT.md#github-authentication)):
 
 ```bash
-eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/<github-key>
-
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 ```
@@ -227,10 +224,10 @@ In `erpnext-dev.env`:
 CUSTOM_APP_KEYS=nando_crm,nando_fulfillment
 SITE_INSTALL_APPS=nando_crm,nando_fulfillment
 
-NANDO_CRM_REPO=git@github.com:Waste-NANDO/nando-erp-crm.git
+NANDO_CRM_REPO=https://github.com/Waste-NANDO/nando-erp-crm.git
 NANDO_CRM_BRANCH=main
 
-NANDO_FULFILLMENT_REPO=git@github.com:Waste-NANDO/nando-erpnext-module.git
+NANDO_FULFILLMENT_REPO=https://github.com/Waste-NANDO/nando-erpnext-module.git
 NANDO_FULFILLMENT_BRANCH=main
 ```
 
@@ -239,7 +236,7 @@ In `erpnext-main.env`:
 ```env
 CUSTOM_APP_KEYS=nando_crm
 SITE_INSTALL_APPS=nando_crm
-NANDO_CRM_REPO=git@github.com:Waste-NANDO/nando-erp-crm.git
+NANDO_CRM_REPO=https://github.com/Waste-NANDO/nando-erp-crm.git
 NANDO_CRM_BRANCH=main
 ```
 

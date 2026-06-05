@@ -420,7 +420,7 @@ docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml cp \
   backend:/home/frappe/frappe-bench/apps/nando_crm \
   /tmp/nando_crm_export
 
-rsync -a /tmp/nando_crm_export/ ./nando-deployment/custom-apps/nando_crm/
+rsync -a /tmp/nando_crm_export/nando_crm/ ./nando-deployment/custom-apps/nando_crm/
 ```
 
 Copy only what changed if you prefer (e.g. `fixtures/`, `doctype/`, `workspace/`, `report/`) instead of a full-tree `rsync`.
@@ -517,8 +517,6 @@ docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml
 docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 
-docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
-  bench --site apps.internal.nandoai.com import-fixtures
 ```
 
 ### 4.4 Server Scripts + cache

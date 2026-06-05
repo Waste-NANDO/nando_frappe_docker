@@ -22,8 +22,9 @@ Workspaces: [README_workspaces.md](README_workspaces.md).
 | Roles (custom only) | Fixture JSON (filtered in `hooks.py`) |
 | Workspaces, Desktop Icons | Fixture JSON or developer-mode export |
 | Reports | Fixture JSON and/or app module files |
+| Google / email integration (optional) | Fixture JSON — **structure only**; secrets re-entered on main |
 
-**Not included:** transactional data (customers, deals, stock, users).
+**Not included:** transactional data (customers, deals, stock, users, calendar **events**, per-user OAuth tokens).
 
 ## Architecture
 
@@ -173,9 +174,22 @@ exit()
 
 ---
 
-### 2.4 Run full inventory
+### 2.4 Run migration inventory
 
-Save this output — you will use it for reassignment and `hooks.py` filters.
+Save this output — it lists only artifacts you own for **`nando_crm`**, not every record on the site.
+
+| Section | Filter | Migrate? |
+|---------|--------|----------|
+| Custom DocTypes | `custom=1` (flag wrong module) | Yes — reassign to `NANDO_CRM` |
+| Client / Server Scripts | `module=NANDO_CRM` | Yes |
+| Workspaces | `module=NANDO_CRM` | Yes |
+| Desktop Icons | `standard=0` | Yes — `standard=1` is ERPNext/Frappe stock |
+| Reports | `module=NANDO_CRM` | Yes |
+| Custom roles | — | Skip unless you created roles for CRM |
+| Custom Fields | — | Skip in inventory — exported via `"Custom Field"` fixture if needed |
+| Module Def | target module only | Verify app/package |
+
+**Desktop Icons:** `standard=1` icons ship with ERPNext, Frappe, and HRMS — do **not** export them. Only `standard=0` records are yours (created in Desk or bench console).
 
 ```bash
 docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
@@ -185,61 +199,72 @@ docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec 
 ```python
 import frappe
 
+TARGET_MODULE = "NANDO_CRM"
+TARGET_APP = "nando_crm"
+
 def section(title):
     print("\n" + "=" * 60)
     print(title)
     print("=" * 60)
 
-section("Custom DocTypes")
+section(f"Custom DocTypes (target module={TARGET_MODULE})")
 for d in frappe.get_all("DocType", filters={"custom": 1},
-                      fields=["name", "module"], order_by="name"):
-    print(f"  {d.name:40} module={d.module}")
+                        fields=["name", "module"], order_by="name"):
+    flag = "" if d.module == TARGET_MODULE else f"  <-- reassign from {d.module}"
+    print(f"  {d.name:40} module={d.module}{flag}")
 
-section("Client Scripts")
-for s in frappe.get_all("Client Script", fields=["name", "dt", "module"], order_by="name"):
+section(f"Client Scripts (module={TARGET_MODULE})")
+for s in frappe.get_all("Client Script",
+        filters={"module": TARGET_MODULE},
+        fields=["name", "dt", "module"], order_by="name"):
     print(f"  {s.name:40} on={s.dt} module={s.module}")
 
-section("Server Scripts")
-for s in frappe.get_all("Server Script", fields=["name", "script_type", "module"], order_by="name"):
+section(f"Server Scripts (module={TARGET_MODULE})")
+for s in frappe.get_all("Server Script",
+        filters={"module": TARGET_MODULE},
+        fields=["name", "script_type", "module"], order_by="name"):
     print(f"  {s.name:40} type={s.script_type} module={s.module}")
 
-section("Workspaces")
-for w in frappe.get_all("Workspace", fields=["name", "module", "public", "app"], order_by="name"):
+section(f"Workspaces (module={TARGET_MODULE})")
+for w in frappe.get_all("Workspace",
+        filters={"module": TARGET_MODULE},
+        fields=["name", "module", "public", "app"], order_by="name"):
     print(f"  {w.name:40} module={w.module} public={w.public} app={w.app}")
 
-section("Desktop Icons")
+section("Desktop Icons (standard=0 only — yours to export)")
 for d in frappe.get_all("Desktop Icon",
-    fields=["name", "label", "link_type", "link_to", "module"], order_by="label"):
-    print(f"  {d.label or d.name:40} link={d.link_type}/{d.link_to} module={d.module}")
+        filters={"standard": 0},
+        fields=["name", "label", "link_type", "link_to", "sidebar", "app"],
+        order_by="label"):
+    print(f"  {d.label or d.name:40} link={d.link_type}/{d.link_to} app={d.app}")
 
-section("Reports")
+section(f"Reports (module={TARGET_MODULE})")
 for r in frappe.get_all("Report",
-    filters={"report_type": ["in", ["Query Report", "Script Report", "Report Builder"]]},
-    fields=["name", "module", "report_type", "ref_doctype"], order_by="name"):
+        filters={"module": TARGET_MODULE},
+        fields=["name", "module", "report_type", "ref_doctype"], order_by="name"):
     print(f"  {r.name:40} type={r.report_type} module={r.module}")
 
-section("Custom roles")
-for role in frappe.get_all("Role", filters={"disabled": 0, "is_custom": 1}, pluck="name"):
-    print(f"  {role}")
-
-section("Custom Fields (count by doctype)")
-from frappe.utils import get_table_name
-rows = frappe.db.sql("""
-    select dt, count(*) as n from `tabCustom Field`
-    group by dt order by n desc
-""", as_dict=1)
-for r in rows:
-    print(f"  {r.dt:40} {r.n} fields")
-
-section("Module Defs (custom)")
-for m in frappe.get_all("Module Def", filters={"custom": 1},
-                        fields=["name", "app_name", "package"]):
-    print(f"  {m.name:40} app={m.app_name} package={m.package}")
+section(f"Module Def ({TARGET_MODULE})")
+if frappe.db.exists("Module Def", TARGET_MODULE):
+    m = frappe.db.get_value("Module Def", TARGET_MODULE,
+        ["name", "app_name", "package", "custom"], as_dict=1)
+    print(f"  {m.name:40} app={m.app_name} package={m.package} custom={m.custom}")
+else:
+    print(f"  MISSING — create {TARGET_MODULE} in step 2.3")
 
 exit()
 ```
 
-Copy the printed list somewhere safe. Anything **not** on module `NANDO_CRM` (or app `nando_crm` for workspaces) needs reassignment in the next steps.
+**Expected for your site (sanity check):**
+
+- **DocTypes:** 5× `NANDO_*` on `NANDO_CRM`; **`Business Unit`** still on `CRM` → reassign in step 2.6.
+- **Scripts:** 3 client + 15 server scripts on `NANDO_CRM`. Ignore `Apply Dev Color` (`module=None`, dev-only).
+- **Workspace:** `NANDO_CRM` with `app=nando_crm`.
+- **Desktop Icons (`standard=0`):** point at **app** Workspace Sidebars (`standard=1`) — icon `label` = sidebar name (usually workspace name). Do not create custom sidebars in console; see [README_workspaces.md](README_workspaces.md).
+- **Reports (6):** All Contracts Value of the year, Last signed contract, Leads with laast contact greater then a week, Sidebar Clients, Sidebar Leads, Sidebar Prospects.
+- **Module Def:** `NANDO_CRM` must show `app=nando_crm`, `package=nando_crm` (not `app=frappe`).
+
+Copy the printed list somewhere safe. Anything **not** on module `NANDO_CRM` needs reassignment in the next steps.
 
 ---
 
@@ -265,24 +290,42 @@ fixtures = [
         "filters": [["module", "=", "NANDO_CRM"]],
     },
     {
+        "dt": "Workspace Sidebar",
+        "filters": [["name", "in", ["NANDO_CRM"]]],  # standard app sidebars only
+    },
+    {
         "dt": "Desktop Icon",
-        "filters": [["module", "=", "NANDO_CRM"]],
+        "filters": [
+            ["standard", "=", 0],
+            ["link_to", "in", ["NANDO_CRM"]],  # must match Workspace Sidebar name
+        ],
     },
     {
         "dt": "Report",
         "filters": [["module", "=", "NANDO_CRM"]],
     },
-    {
-        "dt": "Role",
-        "filters": [["name", "in", [
-            "Role Name 1",
-            "Role Name 2",
-        ]]],
-    },
+    # Optional — only if you created custom roles for CRM:
+    # {
+    #     "dt": "Role",
+    #     "filters": [
+    #         ["is_custom", "=", 1],
+    #         ["disabled", "=", 0],
+    #         ["name", "like", "NANDO%"],       # name starts with NANDO
+    #         # ["name", "like", "%CRM%"],     # or name contains CRM
+    #     ],
+    # },
+    #
+    # Optional — integration *structure* (see §2.10.1; re-enter secrets on main):
+    # "Google Settings",                    # Single — OAuth client id (not secret)
+    # "GCalendar Settings",                 # Single — Google Calendar app credentials
+    # {
+    #     "dt": "Email Account",
+    #     "filters": [["name", "like", "NANDO%"]],  # or email_id / domain filter
+    # },
 ]
 ```
 
-Replace role names with your **custom** roles only (from inventory). Do **not** export standard ERPNext roles.
+Omit the **Role** block unless CRM depends on a custom role you created. Standard roles (`Employee Self Service`, etc.) already exist on main.
 
 Commit and push **before** exporting fixtures if you want a clean git trail:
 
@@ -419,9 +462,7 @@ If a workspace must be **public**, use the console patterns in [README_workspace
 
 **Desktop Icons**
 
-1. **Desktop Icon** list → open each icon for your CRM sidebar
-2. Set **Module** → `NANDO_CRM` where the field exists
-3. Save
+In v16, add tiles with **Add To Desktop** on the Workspace form (see [README_workspaces.md — Desktop Icons](README_workspaces.md#desktop-icons-v16)). Do not create custom Workspace Sidebars in the console.
 
 After workspace changes:
 
@@ -454,17 +495,96 @@ docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec 
 
 ### 2.10 Custom roles (for `hooks.py` only)
 
-Roles are global — no module field. List custom roles in inventory and ensure they appear in the **`Role`** fixture filter in `hooks.py` (step 2.5).
+Roles are global — no module field. List custom roles in inventory and ensure they match the **`Role`** fixture filter in `hooks.py` (step 2.5).
 
-To verify which roles are custom:
+Fixture filters use the same operators as `frappe.get_all`:
+
+| Intent | Filter |
+|--------|--------|
+| Exact names | `["name", "in", ["Role A", "Role B"]]` |
+| Name starts with | `["name", "like", "NANDO%"]` |
+| Name contains | `["name", "like", "%CRM%"]` |
+| All custom roles | `["is_custom", "=", 1]` (recommended baseline) |
+
+Combine with `AND` by listing multiple filter rows in the same `filters` list.
+
+To verify which roles match before export:
 
 ```python
 import frappe
-print(frappe.get_all("Role", filters={"is_custom": 1, "disabled": 0}, pluck="name"))
+# Preview what your fixture filter would export:
+print(frappe.get_all("Role", filters=[
+    ["is_custom", "=", 1],
+    ["disabled", "=", 0],
+    ["name", "like", "NANDO%"],
+], pluck="name"))
 exit()
 ```
 
 **Do not** bulk-export all roles — only names you created.
+
+---
+
+### 2.10.1 Google Settings, Calendar, Email Account (optional)
+
+**Yes — fixtures can export these**, same as other DocTypes. Add them to `hooks.py`, run `export-fixtures`, commit JSON under `nando_crm/fixtures/`.
+
+| DocType | Type | Typical use |
+|---------|------|-------------|
+| **Google Settings** | Single | Google OAuth client id, API key (Maps, Drive, etc.) |
+| **GCalendar Settings** | Single | Google **Calendar** integration app credentials |
+| **Email Account** | Multi | Incoming/outgoing mail setup, linked DocTypes |
+| **GCalendar Account** | Multi | Per-user calendar OAuth — **do not** fixture (user-specific) |
+| **Event** / calendar data | Multi | Transactional — **not** fixtures |
+
+**Secrets warning:** `Password` fields (Email Account SMTP/app password, Google client secret) are encrypted with the **site** key. Fixture JSON may contain ciphertext, but it usually **does not work** on main after `import-fixtures` — plan to **re-enter passwords and re-authorize OAuth** on main. Do not commit real production secrets; use dev credentials in git or redact before push.
+
+**Discover what to export** (bench console):
+
+```python
+import frappe
+
+for single in ["Google Settings", "GCalendar Settings"]:
+    if frappe.db.exists("DocType", single):
+        d = frappe.get_single(single).as_dict()
+        print(single, {k: d.get(k) for k in ("enable", "client_id", "api_key") if k in d})
+
+print("\nEmail Account:")
+for ea in frappe.get_all("Email Account",
+        fields=["name", "email_id", "enable_incoming", "enable_outgoing", "default_incoming", "default_outgoing"],
+        order_by="name"):
+    print(f"  {ea.name!r}  {ea.email_id}  in={ea.enable_incoming} out={ea.enable_outgoing}")
+exit()
+```
+
+**Example `hooks.py` additions** (adjust filters to your account names):
+
+```python
+"Google Settings",
+"GCalendar Settings",
+{
+    "dt": "Email Account",
+    "filters": [
+        ["name", "like", "NANDO%"],           # account name prefix
+        # ["email_id", "like", "%@yourdomain.com"],
+    ],
+},
+```
+
+Preview filter matches before export:
+
+```python
+import frappe
+print(frappe.get_all("Email Account", filters=[["name", "like", "NANDO%"]], pluck="name"))
+exit()
+```
+
+After `import-fixtures` on main:
+
+1. **Google Settings** / **GCalendar Settings** → re-enter **Client Secret**; update Google Cloud redirect URIs for main URL.
+2. **Email Account** → re-enter **Password** / app password; verify SMTP/IMAP against main hostname.
+3. **GCalendar Account** (per user) → each user re-authorizes Google Calendar on main.
+4. Update **Authorized redirect URIs** in Google Cloud from dev (`:3003`) to main (`:3000`) domain.
 
 ---
 

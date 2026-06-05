@@ -5,39 +5,79 @@ Guide for promoting **GUI-built ERPNext customizations** from dev (`:3003`) to m
 | App | Repo | Role |
 |-----|------|------|
 | **`nando_crm`** | [nando-erp-crm](https://github.com/Waste-NANDO/nando-erp-crm) | CRM Desk config: scripts, DocTypes, roles, workspaces, reports |
-| **`nando_fulfillment`** | [nando-erpnext-module](https://github.com/Waste-NANDO/nando-erpnext-module) | Future fulfillment / ops entities (separate lifecycle) |
-
-Both apps are baked into the **dev** image. **Main** ships `nando_crm` only (see `erpnext-main.env`).
+| **`nando_fulfillment`** | [nando-erpnext-module](https://github.com/Waste-NANDO/nando-erpnext-module) | Fulfillment / ops entities (separate lifecycle) |
 
 Full deployment: [DEPLOYMENT.md](../DEPLOYMENT.md).  
 Workspaces: [README_workspaces.md](README_workspaces.md).
 
+## Starting guideline: custom apps bound to images
+
+**Default rule:** Desk customizations you intend to keep must belong to a **custom app** that is listed in `CUSTOM_APP_KEYS` for that stack. The env file defines which apps are fetched, baked into the Docker image, and installed on the site — so it also defines **what you migrate** and what stays dev-only.
+
+| Stack | Env file | `CUSTOM_APP_KEYS` | Role in migration |
+|-------|----------|-------------------|-------------------|
+| Dev `:3003` | [`erpnext-dev.env`](erpnext-dev.env) | `nando_crm`, `nando_fulfillment` | Workshop: GUI customizations live in the **dev DB**; export targets app repo **`main`** branch; **`dev`** branch stays minimal so dev image rebuilds do not overwrite Desk work |
+| Main `:3000` | [`erpnext-main.env`](erpnext-main.env) | `nando_crm` | Production: receives only apps present in this list (today: CRM only) |
+
+**How to know what needs migrating**
+
+1. Compare `CUSTOM_APP_KEYS` on dev vs main. Anything in **dev but not in main** (e.g. `nando_fulfillment`) is **not** part of a main promotion until you add that key to `erpnext-main.env` and rebuild the main image.
+2. For each app you **do** promote, every customization must be owned by that app (module + `hooks.py` fixtures) and committed in its repo before you build the target stack's image.
+3. Promotion is **app code + fixtures in the image**, not a database copy. Rebuild main with the updated app repo (`main` branch), deploy, then `install-app` / `migrate` / `import-fixtures` on main.
+
+**Workflow in one line:** customize on dev (DB) → assign to the correct app module → export → commit fixtures to app repo **`main`** → rebuild **main** image → `install-app` / `migrate` / `import-fixtures` on main. Dev image rebuilds pull the empty **`dev`** branch and leave DB customizations intact.
+
+**Not in scope for this path:** transactional data (customers, deals, stock, users, calendar events, OAuth tokens). Do not restore the dev database onto main.
+
 ## What migrates
 
-| Artifact | Mechanism |
-|----------|-----------|
-| Server Script, Client Script | Fixture JSON in `nando_crm` |
-| Custom Fields, Property Setters | Fixture JSON |
-| Custom DocTypes | App JSON under `nando_crm/.../doctype/` + `migrate` |
-| Roles (custom only) | Fixture JSON (filtered in `hooks.py`) |
-| Workspaces, Desktop Icons | Fixture JSON or developer-mode export |
-| Reports | Fixture JSON and/or app module files |
-| Google / email integration (optional) | Fixture JSON — **structure only**; secrets re-entered on main |
+Each row below applies to the **owning app** (CRM → `nando_crm`; fulfillment → `nando_fulfillment` when that app is in the target stack's `CUSTOM_APP_KEYS`).
 
-**Not included:** transactional data (customers, deals, stock, users, calendar **events**, per-user OAuth tokens).
+| Artifact | Mechanism | Typical owner |
+|----------|-----------|---------------|
+| Server Script, Client Script | Fixture JSON | `nando_crm` |
+| Custom Fields, Property Setters | Fixture JSON | `nando_crm` |
+| Custom DocTypes | App JSON under `<app>/.../doctype/` + `migrate` | `nando_crm` |
+| Roles (custom only) | Fixture JSON (filtered in `hooks.py`) | `nando_crm` |
+| Workspaces, Desktop Icons | Fixture JSON or developer-mode export | `nando_crm` |
+| Reports | Fixture JSON and/or app module files | `nando_crm` |
+| Google / email integration (optional) | Fixture JSON — **structure only**; secrets re-entered on main | `nando_crm` |
 
 ## Architecture
 
+Desk work and promotion use **three separate layers**. Do not treat the app repo or the main database as a copy of dev.
+
+| Layer | Dev `:3003` | Main `:3000` |
+|-------|-------------|--------------|
+| **Site database** | **Source of truth** for ongoing GUI work. Edits are saved here and **stay here** across dev image rebuilds (the `sites` volume persists). | Receives config from the app image (`install-app`, `migrate`, `import-fixtures`) — **not** a restore of the dev DB. |
+| **App git — `dev` branch** | Baked into the **dev image** (`NANDO_CRM_BRANCH=dev`). Intentionally **minimal**: `hooks.py`, app skeleton, no exported fixture JSON. Rebuilding dev therefore does **not** replace or reset GUI customizations already in the dev DB. | Not used by main (`NANDO_CRM_BRANCH=main` in [`erpnext-main.env`](erpnext-main.env)). |
+| **App git — `main` branch** | **Promotion target**: `export-fixtures` / `export-doc` on dev produce files that you copy out and **commit here** (see [§2.6](#26-copy-exported-app-tree-from-container-to-git)). | Baked into the **main image**; fixtures and DocType JSON are applied to the main site on deploy. |
+
 ```text
-Dev DB (:3003)
-  → assign customizations to module NANDO_CRM / app nando_crm
-  → export-fixtures + export-doc on dev
-  → commit nando-erp-crm
-  → build-custom-image.sh (custom-apps/nando_crm + nando_fulfillment)
-  → Main (:3000): install-app nando_crm, migrate, import-fixtures
+erpnext-dev.env   → CUSTOM_APP_KEYS=nando_crm,nando_fulfillment
+                    dev image pulls app repo dev branch (hooks + skeleton only)
+
+erpnext-main.env  → CUSTOM_APP_KEYS=nando_crm
+                    main image pulls app repo main branch (fixtures + DocTypes)
+
+── Dev workshop (:3003) — customizations live in the DB ──
+  Desk GUI edits  →  saved to dev site DB  (persists across dev rebuilds)
+  assign module   →  NANDO_CRM / nando_crm (owning app)
+  export          →  export-fixtures + export-doc  (DB → files in container)
+
+── Git — split branches on purpose ──
+  dev branch      →  hooks.py + skeleton; fixtures/ empty or absent
+  main branch     →  exported fixtures/, doctype/, workspace/, report/, …
+
+── Promote to main (:3000) ──
+  commit + push   →  nando-erp-crm main  (not dev)
+  build           →  build-custom-image.sh erpnext-main.env
+  apply on site   →  install-app, migrate, import-fixtures
 ```
 
-Local clones: `nando-deployment/custom-apps/<app_key>/` (via `fetch-custom-app.sh`).
+**Why `dev` stays empty:** if exported JSON lived on `dev`, every `build-custom-image.sh erpnext-dev.env` would bake stale fixtures into the image and `migrate` / `import-fixtures` could fight the live DB. Keeping fixtures on **`main` only** separates “work in progress in the DB” from “released config for production”.
+
+Local clones: `nando-deployment/custom-apps/<app_key>/` (via `fetch-custom-app.sh`). App key must match a name in `CUSTOM_APP_KEYS` for that env file.
 
 ---
 
@@ -71,11 +111,13 @@ docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec 
 
 ---
 
-## Phase 2 — Tie customizations to `nando_crm` and export (detailed)
+## Phase 2 — Tie CRM customizations to `nando_crm` and export (detailed)
 
 Complete this on **dev** (`:3003`) after Phase 1 (`nando_crm` installed in the image and on the site).
 
-**Goal:** Every CRM customization is owned by app **`nando_crm`** / module **`NANDO_CRM`**, exported to git in [nando-erp-crm](https://github.com/Waste-NANDO/nando-erp-crm), then verified on dev before touching main.
+This phase implements the [starting guideline](#starting-guideline-custom-apps-bound-to-images) for **CRM**: `nando_crm` is in both dev and main `CUSTOM_APP_KEYS`, so it is what you promote. Fulfillment customizations follow the same pattern under `nando_fulfillment` when that app is added to `erpnext-main.env`.
+
+**Goal:** Every CRM customization is owned by app **`nando_crm`** / module **`NANDO_CRM`**, exported to git in [nando-erp-crm](https://github.com/Waste-NANDO/nando-erp-crm), then verified on dev (rebuilt image) before touching main.
 
 **Order matters:** Module Def → reassign records → update `hooks.py` → rebuild dev → developer mode → export → commit.
 
@@ -123,60 +165,9 @@ docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec 
 
 ---
 
-### 2.3 Create or fix Module Def `NANDO_CRM`
+### 2.3 Run migration inventory
 
-**Option A — Desk UI**
-
-1. Open `https://apps.internal.nandoai.com:3003`
-2. Search bar → **Module Def** → **New** (or open existing `NANDO_CRM`)
-3. Set:
-
-   | Field | Value |
-   |-------|--------|
-   | Module Name | `NANDO_CRM` |
-   | App Name | `nando_crm` |
-   | Package | `nando_crm` |
-   | Custom | ✓ checked |
-
-4. Save
-
-**Option B — bench console** (if record missing or wrong app/package)
-
-```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  bench --site apps.internal.nandoai.com console
-```
-
-```python
-import frappe
-
-name = "NANDO_CRM"
-if frappe.db.exists("Module Def", name):
-    frappe.db.set_value("Module Def", name, {
-        "app_name": "nando_crm",
-        "package": "nando_crm",
-        "custom": 1,
-    })
-else:
-    doc = frappe.get_doc({
-        "doctype": "Module Def",
-        "module_name": name,
-        "app_name": "nando_crm",
-        "package": "nando_crm",
-        "custom": 1,
-    })
-    doc.insert(ignore_permissions=True)
-
-frappe.db.commit()
-print(frappe.get_doc("Module Def", name).as_dict())
-exit()
-```
-
----
-
-### 2.4 Run migration inventory
-
-Save this output — it lists only artifacts you own for **`nando_crm`**, not every record on the site.
+Save this output — it lists only artifacts owned by **`nando_crm`** (the app in main's `CUSTOM_APP_KEYS`), not every record on the site or anything destined for `nando_fulfillment` only.
 
 | Section | Filter | Migrate? |
 |---------|--------|----------|
@@ -254,21 +245,9 @@ else:
 
 exit()
 ```
-
-**Expected for your site (sanity check):**
-
-- **DocTypes:** 5× `NANDO_*` on `NANDO_CRM`; **`Business Unit`** still on `CRM` → reassign in step 2.6.
-- **Scripts:** 3 client + 15 server scripts on `NANDO_CRM`. Ignore `Apply Dev Color` (`module=None`, dev-only).
-- **Workspace:** `NANDO_CRM` with `app=nando_crm`.
-- **Desktop Icons (`standard=0`):** point at **app** Workspace Sidebars (`standard=1`) — icon `label` = sidebar name (usually workspace name). Do not create custom sidebars in console; see [README_workspaces.md](README_workspaces.md).
-- **Reports (6):** All Contracts Value of the year, Last signed contract, Leads with laast contact greater then a week, Sidebar Clients, Sidebar Leads, Sidebar Prospects.
-- **Module Def:** `NANDO_CRM` must show `app=nando_crm`, `package=nando_crm` (not `app=frappe`).
-
-Copy the printed list somewhere safe. Anything **not** on module `NANDO_CRM` needs reassignment in the next steps.
-
 ---
 
-### 2.5 Update `hooks.py` in nando-erp-crm
+### 2.4 Update `hooks.py` in nando-erp-crm
 
 On your laptop (or after fetch on the server):
 
@@ -315,219 +294,14 @@ fixtures = [
     #     ],
     # },
     #
-    # Optional — integration *structure* (see §2.10.1; re-enter secrets on main):
-    # "Google Settings",                    # Single — OAuth client id (not secret)
-    # "GCalendar Settings",                 # Single — Google Calendar app credentials
-    # {
-    #     "dt": "Email Account",
-    #     "filters": [["name", "like", "NANDO%"]],  # or email_id / domain filter
-    # },
 ]
 ```
 
 Omit the **Role** block unless CRM depends on a custom role you created. Standard roles (`Employee Self Service`, etc.) already exist on main.
 
-Commit and push **before** exporting fixtures if you want a clean git trail:
+#### Google Settings, Calendar, Email Account (optional)
 
-```bash
-cd nando-deployment/custom-apps/nando_crm
-git add nando_crm/hooks.py
-git commit -m "Configure fixture filters for NANDO_CRM export"
-git push origin main
-```
-
-Rebuild dev so the container runs the new `hooks.py`:
-
-```bash
-# bump CUSTOM_TAG in erpnext-dev.env if you want a new image label
-./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
-```
-
----
-
-### 2.6 Reassign custom DocTypes → module `NANDO_CRM`
-
-**Per DocType — Desk UI**
-
-1. Search → **DocType** list → open each custom DocType from inventory
-2. Set **Module** → `NANDO_CRM`
-3. Save (with developer mode on, this also writes JSON under `apps/nando_crm/.../doctype/`)
-
-**Include child table DocTypes** (Table type) used by your custom DocTypes — reassign those too.
-
-**Bulk reassignment — bench console** (replace names with yours)
-
-```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  bench --site apps.internal.nandoai.com console
-```
-
-```python
-import frappe
-
-TARGET_MODULE = "NANDO_CRM"
-# Edit this list from your inventory:
-DOCTYPE_NAMES = [
-    "My Custom DocType",
-    "My Child Table",
-]
-
-for name in DOCTYPE_NAMES:
-    if not frappe.db.exists("DocType", name):
-        print(f"SKIP missing: {name}")
-        continue
-    doc = frappe.get_doc("DocType", name)
-    doc.module = TARGET_MODULE
-    doc.save(ignore_permissions=True)
-    print(f"OK {name} -> {TARGET_MODULE}")
-
-frappe.db.commit()
-exit()
-```
-
-**Explicit export** (if Save did not write files, or you prefer CLI):
-
-```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  bench --site apps.internal.nandoai.com export-doc "DocType" "My Custom DocType"
-```
-
-Repeat for each DocType and child table.
-
-**Verify files in container:**
-
-```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  find /home/frappe/frappe-bench/apps/nando_crm -path '*/doctype/*' -name '*.json' | head -30
-```
-
----
-
-### 2.7 Reassign Client Scripts and Server Scripts
-
-**Desk UI**
-
-- **Client Script** list → open each → set **Module** → `NANDO_CRM` → Save
-- **Server Script** list → open each → set **Module** → `NANDO_CRM` → Save
-
-Custom Fields on standard forms (Sales Order, Customer, etc.) **do not** need a module change — they are picked up by the `"Custom Field"` fixture entry.
-
-**Bulk — bench console**
-
-```python
-import frappe
-
-TARGET = "NANDO_CRM"
-for dt in ("Client Script", "Server Script"):
-    for name in frappe.get_all(dt, pluck="name"):
-        frappe.db.set_value(dt, name, "module", TARGET)
-        print(f"{dt}: {name} -> {TARGET}")
-frappe.db.commit()
-exit()
-```
-
-Run inside `bench console` as above.
-
----
-
-### 2.8 Reassign Workspaces and Desktop Icons
-
-See also [README_workspaces.md](README_workspaces.md).
-
-**Workspaces — Desk UI**
-
-1. **Workspace** list → open each CRM workspace
-2. Set **Module** → `NANDO_CRM`
-3. Save
-
-**Workspaces — fix app + module in bulk** (use exact workspace **names** from inventory)
-
-```python
-import frappe
-
-WORKSPACE_NAMES = ["NANDO_CRM"]  # extend from inventory
-
-for name in WORKSPACE_NAMES:
-    frappe.db.set_value("Workspace", name, {
-        "module": "NANDO_CRM",
-        "app": "nando_crm",
-    })
-    print(f"Workspace {name} updated")
-frappe.db.commit()
-exit()
-```
-
-If a workspace must be **public**, use the console patterns in [README_workspaces.md](README_workspaces.md) (`public=1`, `for_user=""`, `is_hidden=0`).
-
-**Desktop Icons**
-
-In v16, add tiles with **Add To Desktop** on the Workspace form (see [README_workspaces.md — Desktop Icons](README_workspaces.md#desktop-icons-v16)). Do not create custom Workspace Sidebars in the console.
-
-After workspace changes:
-
-```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  bench --site apps.internal.nandoai.com clear-cache
-```
-
-Log out/in on Desk or **Help → Clear Cache**.
-
----
-
-### 2.9 Reassign Reports
-
-**Desk UI**
-
-1. **Report** list → filter custom / script / query reports you use
-2. Open each → **Module** → `NANDO_CRM` → Save
-
-**Script Reports** with Python code: after reassignment, open once in Desk and Save so developer mode exports `.py` + `.json` into `apps/nando_crm/.../report/`.
-
-**CLI export:**
-
-```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
-  bench --site apps.internal.nandoai.com export-doc "Report" "My Report Name"
-```
-
----
-
-### 2.10 Custom roles (for `hooks.py` only)
-
-Roles are global — no module field. List custom roles in inventory and ensure they match the **`Role`** fixture filter in `hooks.py` (step 2.5).
-
-Fixture filters use the same operators as `frappe.get_all`:
-
-| Intent | Filter |
-|--------|--------|
-| Exact names | `["name", "in", ["Role A", "Role B"]]` |
-| Name starts with | `["name", "like", "NANDO%"]` |
-| Name contains | `["name", "like", "%CRM%"]` |
-| All custom roles | `["is_custom", "=", 1]` (recommended baseline) |
-
-Combine with `AND` by listing multiple filter rows in the same `filters` list.
-
-To verify which roles match before export:
-
-```python
-import frappe
-# Preview what your fixture filter would export:
-print(frappe.get_all("Role", filters=[
-    ["is_custom", "=", 1],
-    ["disabled", "=", 0],
-    ["name", "like", "NANDO%"],
-], pluck="name"))
-exit()
-```
-
-**Do not** bulk-export all roles — only names you created.
-
----
-
-### 2.10.1 Google Settings, Calendar, Email Account (optional)
-
-**Yes — fixtures can export these**, same as other DocTypes. Add them to `hooks.py`, run `export-fixtures`, commit JSON under `nando_crm/fixtures/`.
+**Yes — fixtures can export these**, same as other DocTypes. Add them to the `fixtures` list above, run `export-fixtures`, commit JSON under `nando_crm/fixtures/`.
 
 | DocType | Type | Typical use |
 |---------|------|-------------|
@@ -586,9 +360,26 @@ After `import-fixtures` on main:
 3. **GCalendar Account** (per user) → each user re-authorizes Google Calendar on main.
 4. Update **Authorized redirect URIs** in Google Cloud from dev (`:3003`) to main (`:3000`) domain.
 
+Commit and push **before** exporting fixtures if you want a clean git trail:
+
+```bash
+cd nando-deployment/custom-apps/nando_crm
+git add nando_crm/hooks.py
+git commit -m "Configure fixture filters for NANDO_CRM export"
+git push origin main
+```
+
+Rebuild dev so the container runs the new `hooks.py`:
+
+```bash
+# bump CUSTOM_TAG in erpnext-dev.env if you want a new image label
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
+```
+
 ---
 
-### 2.11 Export fixtures (scripts, fields, roles, workspaces, reports)
+### 2.5 Export fixtures (scripts, fields, roles, workspaces, reports)
 
 Runs against the **`fixtures`** list in `hooks.py` inside the running container.
 
@@ -608,27 +399,33 @@ You should see JSON files such as `client_script.json`, `server_script.json`, `c
 
 ---
 
-### 2.12 Copy exported app tree from container to git
+### 2.6 Copy exported app tree from container to git
 
-If you edited on the server and need to commit from a checkout:
+Exported fixtures and DocTypes belong on the app repo’s **`main`** branch (or **`master`** if that is the default). The **`dev`** branch stays empty — it only carries `hooks.py` and other build-time config used by the dev image (`NANDO_CRM_BRANCH=dev` in [`erpnext-dev.env`](erpnext-dev.env)). Do **not** commit exported JSON to `dev`.
+
+**1. Check out `main` in your local clone** (before copying anything from the container):
+
+```bash
+./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-main.env
+
+cd nando-deployment/custom-apps/nando_crm
+git checkout main   # or: git checkout master
+git pull origin main
+```
+
+**2. Copy the export from the running dev container** into that checkout:
 
 ```bash
 docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml cp \
   backend:/home/frappe/frappe-bench/apps/nando_crm \
   /tmp/nando_crm_export
 
-# merge into your clone, e.g.:
 rsync -a /tmp/nando_crm_export/ ./nando-deployment/custom-apps/nando_crm/
 ```
 
-Or fetch fresh and copy only changed paths:
+Copy only what changed if you prefer (e.g. `fixtures/`, `doctype/`, `workspace/`, `report/`) instead of a full-tree `rsync`.
 
-```bash
-./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-dev.env
-# manually copy doctype/, fixtures/, workspace/ from container export
-```
-
-**Commit and push:**
+**3. Commit and push to `main`:**
 
 ```bash
 cd nando-deployment/custom-apps/nando_crm
@@ -642,7 +439,7 @@ Adjust paths to match your app’s module folder layout (`bench new-app` may use
 
 ---
 
-### 2.13 Rebuild dev and verify
+### 2.7 Rebuild dev and verify
 
 ```bash
 # bump CUSTOM_TAG in erpnext-dev.env
@@ -680,7 +477,7 @@ When Phase 2 passes, proceed to [Phase 4 — Promote to main](#phase-4--promote-
 
 ## Phase 3 — Export summary (reference)
 
-Steps 2.11–2.13 above are the export workflow. Quick reference:
+Steps 2.4–2.7 above are the export workflow. Quick reference:
 
 ```bash
 bench --site apps.internal.nandoai.com set-config developer_mode 1
@@ -692,6 +489,8 @@ bench --site apps.internal.nandoai.com export-fixtures
 ---
 
 ## Phase 4 — Promote to main
+
+Only apps listed in [`erpnext-main.env`](erpnext-main.env) `CUSTOM_APP_KEYS` are in scope. Today that is **`nando_crm` only** — do not expect `nando_fulfillment` on main until you add it to that env file and rebuild the main image.
 
 ### 4.1 Backup main
 
@@ -740,6 +539,8 @@ Assign roles on main users (dev and main do not share users).
 
 ## Env reference (multi-app)
 
+`CUSTOM_APP_KEYS` is the migration boundary: dev can include more apps than main; main receives only what its list contains.
+
 In `erpnext-dev.env` (app repos track **`dev`** branch):
 
 ```env
@@ -770,21 +571,23 @@ App key → env prefix: `nando_crm` → `NANDO_CRM_REPO`, `NANDO_CRM_BRANCH`.
 
 | # | Task |
 |---|------|
-| 1 | Rebuild dev image with both apps |
-| 2 | `install-app nando_crm` on dev |
-| 3 | Module Def `NANDO_CRM` → app `nando_crm` |
-| 4 | Reassign DocTypes, workspaces, reports to `NANDO_CRM` |
-| 5 | Update `hooks.py` filters in nando-erp-crm |
+| 0 | Confirm scope: compare `CUSTOM_APP_KEYS` in `erpnext-dev.env` vs `erpnext-main.env` — only shared apps are promoted |
+| 1 | Rebuild dev image with apps in dev `CUSTOM_APP_KEYS` |
+| 2 | `install-app` missing apps on dev site |
+| 3 | Module Def `NANDO_CRM` → app `nando_crm` (repeat pattern per app you own) |
+| 4 | Reassign DocTypes, workspaces, reports to the owning app module |
+| 5 | Update `hooks.py` fixtures in the app repo |
 | 6 | `developer_mode 1`, export DocTypes + `export-fixtures` |
-| 7 | Commit, push, rebuild dev, verify `:3003` |
+| 7 | Commit, push app repo, rebuild **dev** image, verify `:3003` |
 | 8 | Backup main |
-| 9 | Build main image, deploy |
-| 10 | `install-app nando_crm`, `migrate`, `import-fixtures` |
+| 9 | Merge app repo to `main` branch; build **main** image (`erpnext-main.env`), deploy |
+| 10 | `install-app`, `migrate`, `import-fixtures` for each app in main `CUSTOM_APP_KEYS` |
 | 11 | `server_script_enabled 1`, clear cache, verify `:3000` |
 
 ## Gotchas
 
-- Customizations must be tied to **`nando_crm` / `NANDO_CRM`** before export — not left on orphan modules.
+- Customizations must be tied to an app in **`CUSTOM_APP_KEYS`** for the target stack — not left on orphan modules or apps that exist only on dev.
+- If a customization is not in the rebuilt image's app tree, it will not appear on main after `migrate` / `import-fixtures`.
 - **`import-fixtures`** may be needed after `migrate` if fixtures did not sync automatically.
 - Do **not** restore dev DB onto main.
 - Never `docker compose down -v` on production.

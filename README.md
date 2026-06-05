@@ -21,7 +21,8 @@ HRMS: set `INCLUDE_HRMS=yes` in env files, rebuild images, then `bench install-a
 Quick scripts:
 
 ```bash
-./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env   # dev image + erpnext-dev.yaml
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env   # build image
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env        # deploy stack
 ./nando-deployment/render-compose.sh nando-deployment/erpnext-main.env      # main erpnext-main.yaml
 ```
 

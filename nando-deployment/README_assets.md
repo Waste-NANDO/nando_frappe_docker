@@ -160,7 +160,7 @@ Symlinks under `sites/assets` → `apps/` break across containers when **`bench 
 
 | Script | Purpose |
 |--------|---------|
-| [`deploy-stack.sh`](deploy-stack.sh) | Build + up + migrate + clear-cache |
+| [`deploy-stack.sh`](deploy-stack.sh) | Deploy running stack (default: no image rebuild) |
 | [`setup-assets.sh`](setup-assets.sh) | Re-sync volume; `--full` = runtime bench build |
 | [`materialize-assets.sh`](materialize-assets.sh) | Copy `apps/*/public` → `sites/assets/` |
 

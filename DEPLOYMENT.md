@@ -29,7 +29,6 @@ nando-deployment/
 ├── compose.backup.yaml       # GCS backup sidecar
 ├── erpnext-dev.env           # Dev configuration (edit passwords on server)
 ├── erpnext-main.env          # Main configuration
-├── erpnext.env                 # Legacy dev alias (scripts still accept it)
 ├── erpnext-dev.yaml            # Generated dev compose (gitignored — contains secrets)
 ├── erpnext-main.yaml           # Generated main compose (gitignored)
 ├── build-custom-image.sh       # Build dev image + render dev compose
@@ -76,10 +75,6 @@ Edit on the server (never commit real passwords). Templates are committed with `
 | `CUSTOM_IMAGE` / `CUSTOM_TAG` | `frappe/erpnext` / `v16.5.0` |
 | `APP_NAME` | `nando-erp-main` |
 | `DB_PASSWORD` | **Different** from dev |
-
-### Legacy `erpnext.env`
-
-Same shape as `erpnext-dev.env`. Scripts prefer `erpnext-dev.env` when no file argument is passed; `erpnext.env` still works with a deprecation note.
 
 ## GitHub authentication
 
@@ -170,25 +165,35 @@ Mitigations:
 
 ## Dev deployment
 
-### Routine deploy (after app or env changes)
+### Routine deploy
 
-Bump `CUSTOM_TAG` in `erpnext-dev.env` when image contents change, then:
+**Two scripts — build vs deploy:**
+
+| Script | When | What it does |
+|--------|------|----------------|
+| [`build-custom-image.sh`](nando-deployment/build-custom-image.sh) | App code, ERPNext tag, or image contents changed | Fetch apps → `docker build` → render compose YAML |
+| [`deploy-stack.sh`](nando-deployment/deploy-stack.sh) | Image already built; config/fixtures/migrate only | `up -d` → materialize assets → migrate → clear-cache |
 
 ```bash
-# Loads GITHUB_TOKEN from nando-deployment/github.env if present
+# Typical after app repo changes (bump CUSTOM_TAG in env when image contents change):
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env
+
+# Fast redeploy — fixtures, hooks, migrate only (no 10–20 min rebuild):
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env
+
+# Old behaviour — rebuild + deploy in one command:
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --with-build
 ```
-
-One script: **build image** (includes `bench build --production` when `BUILD_ASSETS_IN_IMAGE=yes`) → **`up -d`** (configurator materializes assets) → **migrate** → **clear-cache**.
-
-You do **not** need `setup-assets.sh` after a normal deploy. Use it only if Desk assets are still broken ([README_assets.md](nando-deployment/README_assets.md)).
 
 Options:
 
 ```bash
-./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-build
-./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-build --skip-migrate
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-migrate
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-build   # deprecated alias for deploy-only
 ```
+
+You do **not** need `setup-assets.sh` after a normal deploy. Use it only if Desk assets are still broken ([README_assets.md](nando-deployment/README_assets.md)).
 
 ### 1. Configure env
 
@@ -198,19 +203,21 @@ nano nando-deployment/erpnext-dev.env
 # BUILD_ASSETS_IN_IMAGE=yes  (default — compile JS/CSS during docker build)
 ```
 
-### 2. Build image only (optional split)
+### 2. Build (image + compose)
 
 ```bash
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ```
 
-This fetches repos into `custom-apps/`, builds `nando-erpnext-custom:<tag>` (asset compile ~10–20 min with HRMS), and writes `nando-deployment/erpnext-dev.yaml`.
+Fetches repos into `custom-apps/`, builds `nando-erpnext-custom:<tag>` (asset compile ~10–20 min with HRMS), renders `nando-deployment/erpnext-dev.yaml`. Does **not** start containers.
 
-### 3. Deploy only (optional split)
+### 3. Deploy (running stack)
 
 ```bash
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env
 ```
+
+Runs `compose up -d`, materializes assets, migrate, clear-cache. Does **not** rebuild the image unless you pass `--with-build`.
 
 ### 4. Site (existing or new)
 
@@ -352,7 +359,7 @@ Steps after app repo changes:
 4. Redeploy dev stack.
 5. `bench --site apps.internal.nandoai.com migrate`
 
-Clones land under `nando-deployment/custom-apps/<app_key>/`. Legacy `CUSTOM_APP_REPO` / `CUSTOM_APP_NAME` still work for a single app.
+Clones land under `nando-deployment/custom-apps/<app_key>/`. Configure each app with `CUSTOM_APP_KEYS` and per-app `NANDO_CRM_REPO` / `NANDO_CRM_BRANCH` (etc.) in the env file.
 
 App code must live in the **image** (`apps.json` at build time), not only inside a running container.
 
@@ -410,7 +417,7 @@ docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec 
 
 If you already run project `erpnext` on port 3003:
 
-1. Copy `erpnext.env` → `erpnext-dev.env` (or use the committed template + your passwords).
+1. Use the committed `erpnext-dev.env` template and set your passwords (or copy your existing env values into it).
 2. Ensure `COMPOSE_PROJECT_NAME=erpnext` and `HTTPS_PUBLISH_PORT=3003`.
 3. Rebuild/render with Traefik constraints: `./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env`
 4. Redeploy: `compose -p erpnext -f nando-deployment/erpnext-dev.yaml up -d` — volumes unchanged.

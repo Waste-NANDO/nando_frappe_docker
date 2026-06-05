@@ -24,26 +24,32 @@ docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml
 
 See [DEPLOYMENT.md](../DEPLOYMENT.md) for full build/redeploy steps.
 
-## Deploy (default — after app or env changes)
+## Build and deploy
+
+| Step | Command | Duration |
+|------|---------|----------|
+| **Build** (app/image changes) | `./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env` | ~10–20 min |
+| **Deploy** (start stack, migrate) | `./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env` | minutes |
+
+Bump `CUSTOM_TAG` in `erpnext-dev.env` when image contents change, then **build**, then **deploy**.
+
+**Build** — fetch custom apps, `docker build`, render compose YAML. Does not run containers.
+
+**Deploy** — `compose up -d`, materialize assets, migrate, clear-cache, restart frontend. Does not rebuild the image (use `--with-build` for the old all-in-one behaviour).
 
 ```bash
-# Bump CUSTOM_TAG in erpnext-dev.env when the image contents change, then:
+# Full cycle after app changes
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env
-```
 
-This runs: **build image** (includes `bench build` when `BUILD_ASSETS_IN_IMAGE=yes`) → **`up -d`** (configurator materializes assets) → **migrate** → **clear-cache**.
+# Redeploy only (fixtures, migrate, cache — no rebuild)
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env
 
-Redeploy only (no rebuild):
+# Rebuild + deploy in one command
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --with-build
 
-```bash
-./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-build
-```
-
-Schema/fixtures only (no new image):
-
-```bash
-./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-build --skip-migrate
-# or just: bench migrate + clear-cache
+# Deploy without migrate
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-migrate
 ```
 
 If Desk assets are still broken after deploy:
@@ -56,13 +62,19 @@ If Desk assets are still broken after deploy:
 
 ## Dev (port 3003, project `erpnext`)
 
+Run `docker compose` from the **repo root** (`nando_frappe_docker/`), or pass `--project-directory .` — bind mounts use `./nando-deployment/...` paths.
+
+Prefer `./nando-deployment/deploy-stack.sh` over raw `compose up` (materialize, migrate, cache).
+
 ```bash
 # Install custom apps (once per site; skip already installed)
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext --project-directory . \
+  -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app nando_crm nando_fulfillment
 
-# Deploy / restart
-docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
+# Deploy / restart (prefer deploy-stack.sh instead)
+docker compose --project-name erpnext --project-directory . \
+  -f nando-deployment/erpnext-dev.yaml up -d
 
 # Stop (keeps volumes)
 docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml down

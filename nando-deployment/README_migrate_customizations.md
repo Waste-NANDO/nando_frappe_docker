@@ -764,8 +764,6 @@ NANDO_CRM_BRANCH=main
 
 App key → env prefix: `nando_crm` → `NANDO_CRM_REPO`, `NANDO_CRM_BRANCH`.
 
-Legacy single-app vars (`CUSTOM_APP_REPO`, `CUSTOM_APP_NAME`) still work for one app only.
-
 ---
 
 ## Checklist

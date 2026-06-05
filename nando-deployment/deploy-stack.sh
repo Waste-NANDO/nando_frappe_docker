@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Build image (if needed), redeploy stack, migrate, clear-cache.
-# Assets: compiled in docker build (BUILD_ASSETS_IN_IMAGE) and materialized on up by configurator.
+# Deploy a running stack: compose up, materialize assets, migrate, clear-cache.
+# Does NOT rebuild the Docker image unless --with-build is passed.
 #
 # Usage:
 #   ./deploy-stack.sh nando-deployment/erpnext-dev.env
-#   ./deploy-stack.sh nando-deployment/erpnext-main.env --skip-build
+#   ./deploy-stack.sh nando-deployment/erpnext-dev.env --with-build
 #   ./deploy-stack.sh nando-deployment/erpnext-dev.env --skip-migrate
+#   ./deploy-stack.sh nando-deployment/erpnext-dev.env --skip-build   # same as default (deprecated alias)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,19 +16,29 @@ source "${SCRIPT_DIR}/resolve-env.sh"
 ENV_FILE="$(resolve_env_file "${SCRIPT_DIR}" "${1:-}")"
 shift || true
 
+WITH_BUILD=0
 SKIP_BUILD=0
 SKIP_MIGRATE=0
 for arg in "$@"; do
   case "${arg}" in
+    --with-build) WITH_BUILD=1 ;;
     --skip-build) SKIP_BUILD=1 ;;
     --skip-migrate) SKIP_MIGRATE=1 ;;
     *)
       echo "Unknown option: ${arg}" >&2
-      echo "Usage: $0 [env-file] [--skip-build] [--skip-migrate]" >&2
+      echo "Usage: $0 [env-file] [--with-build] [--skip-migrate]" >&2
+      echo "       $0 [env-file] [--skip-build]  (deprecated; deploy-only is now the default)" >&2
       exit 1
       ;;
   esac
 done
+
+if [[ "${SKIP_BUILD}" -eq 1 && "${WITH_BUILD}" -eq 1 ]]; then
+  echo "Use either --with-build or --skip-build, not both." >&2
+  exit 1
+fi
+
+DO_BUILD="${WITH_BUILD}"
 
 set -a
 # shellcheck disable=SC1090
@@ -43,8 +54,15 @@ fi
 
 SITE="${FRAPPE_SITE_NAME_HEADER:-apps.internal.nandoai.com}"
 
+rel_env="${ENV_FILE}"
+if [[ "${rel_env}" == "${REPO_ROOT}/"* ]]; then
+  rel_env="${rel_env#"${REPO_ROOT}/"}"
+fi
+
 compose() {
-  docker compose --project-name "${COMPOSE_PROJECT_NAME}" -f "${COMPOSE_FILE_OUTPUT}" "$@"
+  docker compose --project-name "${COMPOSE_PROJECT_NAME}" \
+    --project-directory "${REPO_ROOT}" \
+    -f "${COMPOSE_FILE_OUTPUT}" "$@"
 }
 
 verify_assets_manifest() {
@@ -92,17 +110,41 @@ print(f"[asset-check] OK: {len(refs)} manifest bundle references exist")
 PY
 }
 
-if [[ "${SKIP_BUILD}" -eq 0 ]]; then
+if [[ "${DO_BUILD}" -eq 1 ]]; then
+  echo "══════════════════════════════════════════════════════════════"
+  echo " BUILD (via build-custom-image.sh)"
+  echo "══════════════════════════════════════════════════════════════"
   if include_custom_app_enabled "${INCLUDE_CUSTOM_APP:-yes}" || include_hrms_enabled "${INCLUDE_HRMS:-no}"; then
     "${SCRIPT_DIR}/build-custom-image.sh" "${ENV_FILE}"
   else
     "${SCRIPT_DIR}/render-compose.sh" "${ENV_FILE}"
   fi
-else
-  echo "Skipping image build (--skip-build)."
+  echo ""
 fi
 
-echo "Deploying stack (project ${COMPOSE_PROJECT_NAME})..."
+echo "══════════════════════════════════════════════════════════════"
+echo " DEPLOY: ${COMPOSE_PROJECT_NAME} → ${SITE}"
+echo "══════════════════════════════════════════════════════════════"
+echo ""
+if [[ "${DO_BUILD}" -eq 1 ]]; then
+  echo "Image: rebuilt in this run"
+else
+  echo "Image: using existing ${CUSTOM_IMAGE:-?}:${CUSTOM_TAG:-?} (no rebuild)"
+  echo "       Run build first:  ./nando-deployment/build-custom-image.sh ${rel_env}"
+  echo "       Or deploy+build:  $0 ${rel_env} --with-build"
+fi
+echo ""
+echo "Steps: compose up → materialize assets → migrate → clear-cache → restart frontend"
+echo "Compose: ${COMPOSE_FILE_OUTPUT}"
+echo ""
+
+if [[ ! -f "${COMPOSE_FILE_OUTPUT}" ]]; then
+  echo "Compose file missing. Run build first:" >&2
+  echo "  ./nando-deployment/build-custom-image.sh ${rel_env}" >&2
+  exit 1
+fi
+
+echo "Starting containers..."
 compose up -d
 
 echo "Waiting for configurator..."
@@ -175,8 +217,12 @@ if ! verify_assets_manifest frontend; then
 fi
 
 echo ""
-echo "Deploy complete."
-echo "  Site: ${SITE}"
-echo "  Compose: ${COMPOSE_FILE_OUTPUT}"
+echo "══════════════════════════════════════════════════════════════"
+echo " DEPLOY COMPLETE"
+echo "══════════════════════════════════════════════════════════════"
+echo "  Site:    ${SITE}"
+echo "  URL:     ${FRAPPE_HOST_NAME:-https://${SITE}}"
+echo "  Project: ${COMPOSE_PROJECT_NAME}"
+echo "  Image:   ${CUSTOM_IMAGE:-?}:${CUSTOM_TAG:-?}"
 echo ""
 compose ps

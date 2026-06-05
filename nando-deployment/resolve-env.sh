@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-# Resolve deployment env file: explicit arg > erpnext-dev.env > erpnext.env
+# Resolve deployment env file: explicit arg > erpnext-dev.env
 resolve_env_file() {
   local script_dir="$1"
   local explicit="${2:-}"
@@ -19,13 +19,7 @@ resolve_env_file() {
     return 0
   fi
 
-  if [[ -f "${script_dir}/erpnext.env" ]]; then
-    echo "Note: using legacy erpnext.env; prefer erpnext-dev.env for dev." >&2
-    echo "${script_dir}/erpnext.env"
-    return 0
-  fi
-
-  echo "No env file found. Pass a path or add erpnext-dev.env / erpnext.env under ${script_dir}" >&2
+  echo "No env file found. Pass a path or add erpnext-dev.env under ${script_dir}" >&2
   return 1
 }
 
@@ -61,15 +55,11 @@ custom_app_env_prefix() {
   echo "$1" | tr '[:lower:]-' '[:upper:]_'
 }
 
-# Space-separated app keys from CUSTOM_APP_KEYS or legacy CUSTOM_APP_NAME.
+# Space-separated app keys from CUSTOM_APP_KEYS.
 resolve_custom_app_keys() {
   local keys="${CUSTOM_APP_KEYS:-}"
   if [[ -n "${keys}" ]]; then
     echo "${keys}" | tr ',' ' '
-    return 0
-  fi
-  if [[ -n "${CUSTOM_APP_NAME:-}" ]]; then
-    echo "${CUSTOM_APP_NAME}"
     return 0
   fi
   echo "nando_fulfillment"
@@ -83,11 +73,6 @@ get_custom_app_repo() {
 
   if [[ -n "${!repo_var:-}" ]]; then
     echo "${!repo_var}"
-    return 0
-  fi
-
-  if [[ "${key}" == "${CUSTOM_APP_NAME:-}" && -n "${CUSTOM_APP_REPO:-}" ]]; then
-    echo "${CUSTOM_APP_REPO}"
     return 0
   fi
 
@@ -105,15 +90,10 @@ get_custom_app_branch() {
     return 0
   fi
 
-  if [[ "${key}" == "${CUSTOM_APP_NAME:-}" && -n "${CUSTOM_APP_BRANCH:-}" ]]; then
-    echo "${CUSTOM_APP_BRANCH}"
-    return 0
-  fi
-
   echo ""
 }
 
-# Space-separated apps to install on site (defaults to CUSTOM_APP_KEYS / legacy name).
+# Space-separated apps to install on site (defaults to CUSTOM_APP_KEYS).
 resolve_site_install_apps() {
   local apps="${SITE_INSTALL_APPS:-}"
   if [[ -n "${apps}" ]]; then

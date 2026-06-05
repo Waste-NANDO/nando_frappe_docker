@@ -74,7 +74,7 @@ fetch_one_app() {
   if ! repo="$(get_custom_app_repo "${key}")"; then
     local prefix
     prefix="$(custom_app_env_prefix "${key}")"
-    echo "No repo configured for app key '${key}' (set ${prefix}_REPO or legacy CUSTOM_APP_REPO)" >&2
+    echo "No repo configured for app key '${key}' (set ${prefix}_REPO in ${ENV_FILE})" >&2
     return 1
   fi
 

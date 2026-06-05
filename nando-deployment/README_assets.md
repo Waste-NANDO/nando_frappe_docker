@@ -57,19 +57,19 @@ The volume masks image `sites/` content. **Materialize** copies real files from 
 ## Manual sync (troubleshooting)
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bash /home/frappe/frappe-bench/materialize-assets.sh
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com clear-cache
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart frontend
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart frontend
 ```
 
 Verify:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
   ls sites/assets/frappe/dist/css/website.bundle.*.css | head -1
 ```
 
@@ -102,7 +102,7 @@ watch -n 2 'free -h | grep Mem'
 
 Aim for **~8–12 GiB MemAvailable** when HRMS is in the image. Your e2-highmem-8 with ~34 GiB available is fine.
 
-After OOM: `sudo dmesg -T | grep -i oom | tail -10`
+After OOM: `dmesg -T | grep -i oom | tail -10`
 
 ---
 
@@ -142,7 +142,7 @@ If that still fails, rebuild the image once (so `.baked-assets/` exists), then r
 Verify login bundles exist:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
   ls sites/assets/frappe/dist/css/website.bundle.*.css sites/assets/frappe/dist/css/login.bundle.*.css
 ```
 

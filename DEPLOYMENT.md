@@ -209,7 +209,7 @@ This fetches repos into `custom-apps/`, builds `nando-erpnext-custom:<tag>` (ass
 ### 3. Deploy only (optional split)
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 ```
 
 ### 4. Site (existing or new)
@@ -219,7 +219,7 @@ Existing server with site already created — skip `new-site`.
 New site:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench new-site \
     --mariadb-user-host-login-scope='%' \
     --db-root-password 'YOUR_DB_PASSWORD' \
@@ -232,17 +232,17 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 Install custom apps once (skip any already installed):
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app nando_crm nando_fulfillment
 ```
 
 ### 5. Enable Server Scripts (dev)
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench set-config -g server_script_enabled 1
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart backend
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart backend
 ```
 
 ## Main deployment
@@ -278,13 +278,13 @@ Allow **TCP 3000** from your VPC (same pattern as 3003).
 ### 4. Deploy
 
 ```bash
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
 ```
 
 ### 5. Create empty site (ERPNext only)
 
 ```bash
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench new-site \
     --mariadb-user-host-login-scope='%' \
     --db-root-password 'YOUR_MAIN_DB_PASSWORD' \
@@ -376,7 +376,7 @@ Optional override: set `GCS_PREFIX` in the env file (see [`compose.backup.yaml`]
 Manual backup:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com backup --with-files
 ```
 
@@ -438,18 +438,18 @@ Dev and main do **not** share users, employees, or HR records. Each stack has it
 2. Build and redeploy:
 
 ```bash
-sudo ./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-dev.env
-sudo ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
+./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-dev.env
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 ```
 
 3. Install HRMS on the existing site:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app hrms
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
@@ -459,17 +459,17 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 2. Build and redeploy (no custom app fetch):
 
 ```bash
-sudo ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-main.env
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-main.env
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
 ```
 
 3. Install HRMS:
 
 ```bash
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app hrms
 
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
@@ -478,11 +478,11 @@ sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main
 ### Verify
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com list-apps
 # expect hrms among installed apps
 
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com list-apps
 ```
 
@@ -507,20 +507,20 @@ HR workspaces should appear in Desk on both ports after install.
 2. Recreate containers **without** `-v` (keeps `erpnext_sites` / DB):
 
    ```bash
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml down
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d --force-recreate
+   docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml down
+   docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d --force-recreate
    ```
 
 3. Redeploy runs `materialize-assets.sh` via `configurator`. After app changes without a new image:
 
    ```bash
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+   docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
      bench build --force
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+   docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
      bash /home/frappe/frappe-bench/materialize-assets.sh
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+   docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
      bench --site apps.internal.nandoai.com clear-cache
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart frontend
+   docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart frontend
    ```
 
 4. Verify backend and frontend share the same path (no separate anonymous volume at `sites/assets`):
@@ -535,9 +535,9 @@ HR workspaces should appear in Desk on both ports after install.
    Expect **no line** for `sites/assets`, or the same `erpnext_sites` volume only. HRMS CSS counts should match:
 
    ```bash
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+   docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
      ls sites/assets/hrms/dist/css 2>/dev/null | wc -l
-   sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
+   docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
      ls sites/assets/hrms/dist/css 2>/dev/null | wc -l
    ```
 
@@ -560,7 +560,7 @@ HR workspaces should appear in Desk on both ports after install.
 After changing apps at runtime, rebuild bundles **and** materialize:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bash /home/frappe/frappe-bench/materialize-assets.sh
 # or: bench build --force first, then materialize-assets.sh
 ```
@@ -568,7 +568,7 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 Manual one-liner (same script):
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bash /home/frappe/frappe-bench/materialize-assets.sh
 ```
 
@@ -576,10 +576,10 @@ Confirm diagnosis:
 
 ```bash
 # Often EXISTS on backend only:
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   ls apps/frappe/frappe/public/dist/css/website.bundle.*.css | head -1
 # Often MISSING on frontend:
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec frontend \
   ls apps/frappe/frappe/public/dist/css/website.bundle.*.css | head -1
 ```
 
@@ -598,8 +598,8 @@ Each `compose up` runs `materialize-assets.sh` in **configurator** (usually unde
 ### Traefik / certs
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml logs proxy
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec proxy ls -la /certs/
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml logs proxy
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec proxy ls -la /certs/
 ```
 
 ### Wrong stack answering
@@ -612,7 +612,7 @@ Always use **single quotes** for `bench new-site` passwords (`'My!Pass'`).
 
 ### Gotchas (from first deployment)
 
-- Use `sudo docker compose … config | sudo tee file` if redirect permission fails
+- Use `docker compose … config | tee file` if redirect permission fails
 - `bench new-site` “Site already exists” → `--force` to recreate
 - MySQL prompt `Enter mysql super user [root]:` → press Enter
 - Admin user is `Administrator` (capital A)

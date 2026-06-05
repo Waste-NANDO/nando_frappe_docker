@@ -7,18 +7,18 @@ Site name for both stacks: `apps.internal.nandoai.com`
 Dev:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app hrms
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
 Main:
 
 ```bash
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app hrms
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
@@ -58,21 +58,21 @@ If Desk assets are still broken after deploy:
 
 ```bash
 # Install custom apps (once per site; skip already installed)
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app nando_crm nando_fulfillment
 
 # Deploy / restart
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 
 # Stop (keeps volumes)
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml down
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml down
 
 # Logs
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml logs -f backend
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml logs -f proxy
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml logs -f backend
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml logs -f proxy
 
 # Bench
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 
 # Rebuild frontend bundles — only if Desk broken after deploy, or JS changed without image rebuild
@@ -81,7 +81,7 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 ./nando-deployment/setup-assets.sh nando-deployment/erpnext-dev.env --full
 
 # Shell
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend bash
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend bash
 ```
 
 ## Main (port 3000, project `erpnext-main`)
@@ -90,20 +90,20 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 ./nando-deployment/deploy-stack.sh nando-deployment/erpnext-main.env
 
 # Install nando_crm (once per site)
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app nando_crm
 
 # Stop (keeps volumes)
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml down
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml down
 
 # Logs
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml logs -f backend
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml logs -f backend
 
 # Asset re-sync if Desk broken
 ./nando-deployment/setup-assets.sh nando-deployment/erpnext-main.env
 
 # Shell
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend bash
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend bash
 ```
 
 ## Regenerate compose files

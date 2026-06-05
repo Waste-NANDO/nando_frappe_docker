@@ -401,7 +401,7 @@ To run cypress based UI tests in a docker environment, follow the below steps:
 1. Install and setup X11 tooling on VM using the script `install_x11_deps.sh`
 
 ```shell
-  sudo bash ./install_x11_deps.sh
+  bash ./install_x11_deps.sh
 ```
 
 This script will install required deps, enable X11Forwarding and restart SSH daemon and export `DISPLAY` variable.

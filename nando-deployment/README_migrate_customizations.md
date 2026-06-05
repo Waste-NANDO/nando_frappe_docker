@@ -46,16 +46,16 @@ On the server (PAT configured — see [DEPLOYMENT.md](../DEPLOYMENT.md#github-au
 
 ```bash
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 ```
 
 Install **new** app on existing dev site (`nando_fulfillment` may already be installed):
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app nando_crm nando_fulfillment
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
@@ -64,7 +64,7 @@ If `nando_fulfillment` is already installed, run only `install-app nando_crm`.
 Verify:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com list-apps
 ```
 
@@ -83,27 +83,27 @@ Complete this on **dev** (`:3003`) after Phase 1 (`nando_crm` installed in the i
 ### 2.1 Confirm prerequisites
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com list-apps
 ```
 
 Expect `nando_crm` in the list. If missing:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app nando_crm
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
 Server Scripts must already work on dev (`server_script_enabled`). If not:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench set-config -g server_script_enabled 1
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart backend
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml restart backend
 ```
 
 ---
@@ -113,10 +113,10 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 Required before DocType/workspace JSON is written into the app tree on save.
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com set-config developer_mode 1
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com clear-cache
 ```
 
@@ -142,7 +142,7 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 **Option B — bench console** (if record missing or wrong app/package)
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com console
 ```
 
@@ -178,7 +178,7 @@ exit()
 Save this output — you will use it for reassignment and `hooks.py` filters.
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com console
 ```
 
@@ -298,7 +298,7 @@ Rebuild dev so the container runs the new `hooks.py`:
 ```bash
 # bump CUSTOM_TAG in erpnext-dev.env if you want a new image label
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 ```
 
 ---
@@ -316,7 +316,7 @@ sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml 
 **Bulk reassignment — bench console** (replace names with yours)
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com console
 ```
 
@@ -346,7 +346,7 @@ exit()
 **Explicit export** (if Save did not write files, or you prefer CLI):
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com export-doc "DocType" "My Custom DocType"
 ```
 
@@ -355,7 +355,7 @@ Repeat for each DocType and child table.
 **Verify files in container:**
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   find /home/frappe/frappe-bench/apps/nando_crm -path '*/doctype/*' -name '*.json' | head -30
 ```
 
@@ -426,7 +426,7 @@ If a workspace must be **public**, use the console patterns in [README_workspace
 After workspace changes:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com clear-cache
 ```
 
@@ -446,7 +446,7 @@ Log out/in on Desk or **Help → Clear Cache**.
 **CLI export:**
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com export-doc "Report" "My Report Name"
 ```
 
@@ -473,14 +473,14 @@ exit()
 Runs against the **`fixtures`** list in `hooks.py` inside the running container.
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com export-fixtures
 ```
 
 **Verify fixture files:**
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   ls -la /home/frappe/frappe-bench/apps/nando_crm/nando_crm/fixtures/
 ```
 
@@ -493,7 +493,7 @@ You should see JSON files such as `client_script.json`, `server_script.json`, `c
 If you edited on the server and need to commit from a checkout:
 
 ```bash
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml cp \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml cp \
   backend:/home/frappe/frappe-bench/apps/nando_crm \
   /tmp/nando_crm_export
 
@@ -527,12 +527,12 @@ Adjust paths to match your app’s module folder layout (`bench new-app` may use
 ```bash
 # bump CUSTOM_TAG in erpnext-dev.env
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml up -d
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 
-sudo docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
+docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec backend \
   bench --site apps.internal.nandoai.com clear-cache
 ```
 
@@ -576,7 +576,7 @@ bench --site apps.internal.nandoai.com export-fixtures
 ### 4.1 Backup main
 
 ```bash
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com backup --with-files
 ```
 
@@ -585,32 +585,32 @@ sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main
 `erpnext-main.env` already sets `CUSTOM_APP_KEYS=nando_crm`. On the server:
 
 ```bash
-sudo ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-main.env
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
+./nando-deployment/build-custom-image.sh nando-deployment/erpnext-main.env
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
 ```
 
 ### 4.3 Install app and apply config
 
 ```bash
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app nando_crm
 
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com import-fixtures
 ```
 
 ### 4.4 Server Scripts + cache
 
 ```bash
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench set-config -g server_script_enabled 1
 
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml restart backend
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml restart backend
 
-sudo docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
+docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com clear-cache
 ```
 

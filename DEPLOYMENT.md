@@ -324,20 +324,29 @@ Two custom apps are configured by default:
 | `nando_crm` | `Waste-NANDO/nando-erp-crm` | `nando_crm` |
 | `nando_fulfillment` | `Waste-NANDO/nando-erpnext-module` | `nando_fulfillment` |
 
-Env vars in `erpnext-dev.env`:
+Env vars — **branches differ by stack** (`dev` on dev, `main` on main):
+
+```env
+# erpnext-dev.env
+NANDO_CRM_BRANCH=dev
+NANDO_FULFILLMENT_BRANCH=dev
+
+# erpnext-main.env
+NANDO_CRM_BRANCH=main
+```
+
+Both stacks clone into the **same paths** on the build machine (`custom-apps/nando_crm/`, etc.). `fetch-custom-app.sh` checks out the branch from whichever env file you pass. You do **not** need separate directories unless you want both branches checked out side-by-side for local editing.
 
 ```env
 CUSTOM_APP_KEYS=nando_crm,nando_fulfillment
 SITE_INSTALL_APPS=nando_crm,nando_fulfillment
 NANDO_CRM_REPO=https://github.com/Waste-NANDO/nando-erp-crm.git
-NANDO_CRM_BRANCH=main
 NANDO_FULFILLMENT_REPO=https://github.com/Waste-NANDO/nando-erpnext-module.git
-NANDO_FULFILLMENT_BRANCH=main
 ```
 
 Steps after app repo changes:
 
-1. Set branch vars if needed (`NANDO_CRM_BRANCH`, etc.).
+1. Run fetch/build with the **correct env file** (`erpnext-dev.env` vs `erpnext-main.env`) — branch vars are read automatically.
 2. `./nando-deployment/fetch-custom-app.sh nando-deployment/erpnext-dev.env`
 3. Bump `CUSTOM_TAG`, rebuild: `./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env`
 4. Redeploy dev stack.

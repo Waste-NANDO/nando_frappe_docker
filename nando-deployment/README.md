@@ -28,6 +28,8 @@ GitHub PAT for private custom app repos: copy [`github.env.example`](github.env.
 
 Default env resolution: argument → `erpnext-dev.env` → `erpnext.env`.
 
+**App git branches:** set `NANDO_CRM_BRANCH` / `NANDO_FULFILLMENT_BRANCH` per env file (`dev` in `erpnext-dev.env`, `main` in `erpnext-main.env`). Fetch and build scripts read these automatically. Clones live under `custom-apps/<key>/` (one checkout per app; branch switches when you pass a different env file).
+
 ## Generated files (gitignored)
 
 - `erpnext-dev.yaml` — dev stack (contains inlined secrets)

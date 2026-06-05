@@ -740,20 +740,20 @@ Assign roles on main users (dev and main do not share users).
 
 ## Env reference (multi-app)
 
-In `erpnext-dev.env`:
+In `erpnext-dev.env` (app repos track **`dev`** branch):
 
 ```env
 CUSTOM_APP_KEYS=nando_crm,nando_fulfillment
 SITE_INSTALL_APPS=nando_crm,nando_fulfillment
 
 NANDO_CRM_REPO=https://github.com/Waste-NANDO/nando-erp-crm.git
-NANDO_CRM_BRANCH=main
+NANDO_CRM_BRANCH=dev
 
 NANDO_FULFILLMENT_REPO=https://github.com/Waste-NANDO/nando-erpnext-module.git
-NANDO_FULFILLMENT_BRANCH=main
+NANDO_FULFILLMENT_BRANCH=dev
 ```
 
-In `erpnext-main.env`:
+In `erpnext-main.env` (app repos track **`main`** branch):
 
 ```env
 CUSTOM_APP_KEYS=nando_crm

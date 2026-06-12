@@ -374,7 +374,7 @@ Dev Desk changes (Custom Fields, Server Scripts, custom DocTypes, roles, workspa
 1. Ensure `fixtures = [...]` in `nando-erp-crm` `hooks.py` (module filter `NANDO_CRM`).
 2. On dev: reassign GUI customizations to module **NANDO_CRM**; `export-doc` / developer-mode save for DocTypes; `export-fixtures`.
 3. Commit in `nando-erp-crm`; rebuild dev image and verify `:3003`.
-4. On main: `build-custom-image.sh` with `CUSTOM_APP_KEYS=nando_crm`, deploy, `install-app nando_crm`, `migrate` / `import-fixtures`, enable `server_script_enabled`.
+4. On main: `build-custom-image.sh` with `CUSTOM_APP_KEYS=nando_crm`, deploy, `install-app nando_crm`, `migrate` , enable `server_script_enabled`.
 
 Transactional data (customers, orders, stock) requires explicit export/import — not fixtures.
 

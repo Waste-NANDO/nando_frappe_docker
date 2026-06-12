@@ -238,7 +238,7 @@ Or use [`deploy-stack.sh`](deploy-stack.sh) which runs migrate and cache clear.
 
 - **`export-fixtures` without `--app`** exports every installed app — easy way to pull in wrong custom fields.
 - **Unfiltered `"Custom Field"` in hooks** exports the entire site; always filter by module.
-- **Standard fieldnames** (Customer `first_name`, `last_name`) cannot be custom fields in v16.
+- **Standard fieldnames** (Customer `first_name`, `last_name`) cannot be custom fields in v16. See [README_customfields.md](README_customfields.md).
 - **Secrets** in fixtures (email passwords, OAuth) must be re-entered on main.
 - **In-container edits** are lost on image rebuild — always commit to git.
 - **Dev rebuild** is safe for DB customizations; only commit fixture JSON to **`main`**, not **`dev`**.

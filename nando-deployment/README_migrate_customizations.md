@@ -186,14 +186,15 @@ docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml
   bench --site apps.internal.nandoai.com backup --with-files
 ```
 
-**Build and deploy:**
+**Build and deploy** (image rebuild + `compose up` + migrate + clear-cache):
 
 ```bash
-./nando-deployment/build-custom-image.sh nando-deployment/erpnext-main.env
-docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml up -d
+./nando-deployment/deploy-stack.sh nando-deployment/erpnext-main.env --with-build
 ```
 
-**Install apps (if missing) and migrate** — `migrate` syncs fixtures; there is no separate `import-fixtures` command:
+Equivalent to `build-custom-image.sh` then `deploy-stack.sh` without `--with-build`. Build takes ~10–20 min.
+
+**Install apps** if not already on the site (run after deploy if needed):
 
 ```bash
 docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
@@ -201,24 +202,27 @@ docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml
 
 docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com install-app nando_fulfillment
+```
 
+If you ran `install-app`, migrate again — `migrate` syncs fixtures; there is no separate `import-fixtures` command:
+
+```bash
 docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench --site apps.internal.nandoai.com migrate
 ```
 
-Skip `install-app` for apps already on the site. Enable server scripts and clear cache:
+Skip `install-app` / extra `migrate` when apps are already installed and deploy completed cleanly.
+
+Enable server scripts (once per site):
 
 ```bash
 docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
   bench set-config -g server_script_enabled 1
 
 docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml restart backend
-
-docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml exec backend \
-  bench --site apps.internal.nandoai.com clear-cache
 ```
 
-Or use [`deploy-stack.sh`](deploy-stack.sh) which runs migrate and cache clear.
+(`deploy-stack.sh` already clears cache; restart backend only if enabling server scripts for the first time.)
 
 ---
 
@@ -231,8 +235,8 @@ Or use [`deploy-stack.sh`](deploy-stack.sh) which runs migrate and cache clear.
 | 3 | Set scoped `fixtures` in each app's `hooks.py` |
 | 4 | `export-fixtures --app nando_crm` (and/or `nando_fulfillment`) |
 | 5 | `docker compose cp` + `rsync` → commit/push to **`main`** / **`master`** |
-| 6 | `build-custom-image.sh erpnext-main.env` → `up -d` |
-| 7 | `install-app` (if needed) → `migrate` → verify `:3000` |
+| 6 | `deploy-stack.sh erpnext-main.env --with-build` |
+| 7 | `install-app` (if needed) → extra `migrate` if needed → verify `:3000` |
 
 ## Gotchas
 

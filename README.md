@@ -14,9 +14,7 @@ This fork includes a production-style **dual-stack** setup under [`nando-deploym
 | Dev (custom app, test data) | `https://apps.internal.nandoai.com:3003` | [`erpnext-dev.env`](nando-deployment/erpnext-dev.env) |
 | Main (ERPNext + HRMS) | `https://apps.internal.nandoai.com:3000` | [`erpnext-main.env`](nando-deployment/erpnext-main.env) |
 
-Full guide: **[DEPLOYMENT.md](DEPLOYMENT.md)** — bootstrap, Traefik, HRMS, backups, fixture promotion.
-
-HRMS: set `INCLUDE_HRMS=yes` in env files, rebuild images, then `bench install-app hrms` on each site (see DEPLOYMENT.md).
+Full guide: **[DEPLOYMENT.md](DEPLOYMENT.md)**. Desk sync: [`nando-deployment/README_migrate_customizations.md`](nando-deployment/README_migrate_customizations.md).
 
 Quick scripts:
 

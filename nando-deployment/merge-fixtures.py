@@ -104,6 +104,21 @@ def main() -> int:
     parser.add_argument("--missing-out", required=True, type=Path)
     parser.add_argument("--changed-out", type=Path, default=None)
     parser.add_argument("--force-update", action="store_true")
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Limit to these document names (repeatable)",
+    )
+    parser.add_argument(
+        "--file",
+        action="append",
+        default=[],
+        dest="file_names",
+        metavar="JSON",
+        help="Limit to these fixture filenames, e.g. doctype.json (repeatable)",
+    )
     args = parser.parse_args()
 
     source_root = args.source.resolve()
@@ -114,14 +129,24 @@ def main() -> int:
 
     files = {rel(p, source_root) for p in iter_json_files(source_root)}
     files |= {rel(p, dest_root) for p in iter_json_files(dest_root)}
+    if args.file_names:
+        want = set(args.file_names)
+        files = {p for p in files if p.name in want}
+
+    only = set(args.only)
 
     grand: dict[str, list[str]] = {"added": [], "changed": [], "unchanged": []}
     any_work = False
 
     for rel_path in sorted(files, key=str):
+        source_docs = load_docs(source_root / rel_path)
+        dest_docs = load_docs(dest_root / rel_path)
+        if only:
+            source_docs = [d for d in source_docs if doc_name(d) in only]
+            dest_docs = [d for d in dest_docs if doc_name(d) in only]
         merged, missing, changed_docs, report = merge_file(
-            load_docs(source_root / rel_path),
-            load_docs(dest_root / rel_path),
+            source_docs,
+            dest_docs,
             args.force_update,
         )
         write_docs(merged_root / rel_path, merged)

@@ -42,7 +42,7 @@ Bump `CUSTOM_TAG` in `erpnext-dev.env` when image contents change, then **build*
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env
 ./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env
 
-# Redeploy only (fixtures, migrate, cache — no rebuild)
+# Redeploy only (no rebuild)
 ./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env
 
 # Rebuild + deploy in one command

@@ -363,30 +363,17 @@ Clones land under `nando-deployment/custom-apps/<app_key>/`. Configure each app 
 
 App code must live in the **image** (`apps.json` at build time), not only inside a running container.
 
-## Promoting customizations to main
+## Desk customizations
 
-Dev Desk changes (Custom Fields, Server Scripts, custom DocTypes, roles, workspaces, reports, etc.) live in the **dev database**. They do not copy to main automatically.
-
-**Full guide:** [`nando-deployment/README_migrate_customizations.md`](nando-deployment/README_migrate_customizations.md) — export CRM customizations into **`nando_crm`**, inventory, and main rollout.
-
-While both sites are edited in Desk, sync live-to-live (git is history, not the apply engine):
+Both sites are edited in the UI. Sync live-to-live; git is history. Guide: [`nando-deployment/README_migrate_customizations.md`](nando-deployment/README_migrate_customizations.md).
 
 ```bash
-./nando-deployment/sync-fixtures-dev-to-main.sh                 # report
-./nando-deployment/sync-fixtures-dev-to-main.sh --apply         # import missing onto live main
+./nando-deployment/sync-fixtures-dev-to-main.sh
+./nando-deployment/sync-fixtures-dev-to-main.sh --apply
 ./nando-deployment/sync-fixtures-main-to-dev.sh --apply --commit
 ```
 
-Do **not** `git pull` inside running containers, and do not use `deploy-stack` migrate to copy Desk fixtures.
-
-**Short path:**
-
-1. Ensure `fixtures = [...]` in `nando-erp-crm` `hooks.py` (module filter `NANDO_CRM`).
-2. On dev: reassign GUI customizations to module **NANDO_CRM**; `export-doc` / developer-mode save for DocTypes; `export-fixtures`.
-3. Commit in `nando-erp-crm`; rebuild dev image and verify `:3003`.
-4. On main: `build-custom-image.sh` with `CUSTOM_APP_KEYS=nando_crm`, deploy, `install-app nando_crm`, `migrate` , enable `server_script_enabled`.
-
-Transactional data (customers, orders, stock) requires explicit export/import — not fixtures.
+Do not `git pull` in containers. Do not use `deploy-stack` migrate to copy Desk fixtures. Transactional data is not fixtures.
 
 ## Backups
 

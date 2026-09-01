@@ -19,10 +19,12 @@ FORCE_UPDATE=0
 DO_COMMIT=0
 DO_PUSH=0
 APPS=()
+ONLY=()
+FILE_NAMES=()
 
 usage() {
   cat <<EOF
-Usage: $0 --from <dev|main> --to <dev|main> [--apply] [--commit] [--push] [--force-update] [app ...]
+Usage: $0 --from <dev|main> --to <dev|main> [options] [app ...]
 
 Compares live Desk exports (not git). Git is the history ledger on main/master.
 
@@ -32,8 +34,9 @@ Default: export both sites, print missing/conflict report, write /tmp/fixture-sy
   --commit        after apply, re-export dest and commit fixtures on the app's
                   main/master branch (history). Does not commit onto git \`dev\`.
   --push          git push after --commit.
-
-Routine deploy-stack migrate is the wrong apply path while both sites are edited in Desk.
+  --only NAME     only these document names (repeatable).
+  --file JSON     only these fixture files, e.g. doctype.json (repeatable).
+  app ...         only these apps (default: CUSTOM_APP_KEYS).
 EOF
 }
 
@@ -45,6 +48,14 @@ while [[ $# -gt 0 ]]; do
     --commit) DO_COMMIT=1; shift ;;
     --push) DO_PUSH=1; shift ;;
     --force-update) FORCE_UPDATE=1; shift ;;
+    --only)
+      ONLY+=("${2:-}")
+      shift 2
+      ;;
+    --file)
+      FILE_NAMES+=("${2:-}")
+      shift 2
+      ;;
     -h | --help) usage; exit 0 ;;
     --*)
       echo "Unknown option: $1" >&2
@@ -221,6 +232,14 @@ MERGE_FLAGS=()
 if [[ "${FORCE_UPDATE}" -eq 1 ]]; then
   MERGE_FLAGS+=(--force-update)
 fi
+for name in "${ONLY[@]+"${ONLY[@]}"}"; do
+  [[ -z "${name}" ]] && continue
+  MERGE_FLAGS+=(--only "${name}")
+done
+for fname in "${FILE_NAMES[@]+"${FILE_NAMES[@]}"}"; do
+  [[ -z "${fname}" ]] && continue
+  MERGE_FLAGS+=(--file "${fname}")
+done
 
 if [[ "${DO_COMMIT}" -eq 1 ]]; then
   echo "[git] fetch main/master checkouts for history commits"

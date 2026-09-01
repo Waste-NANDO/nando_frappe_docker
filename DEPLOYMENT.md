@@ -369,6 +369,16 @@ Dev Desk changes (Custom Fields, Server Scripts, custom DocTypes, roles, workspa
 
 **Full guide:** [`nando-deployment/README_migrate_customizations.md`](nando-deployment/README_migrate_customizations.md) — export CRM customizations into **`nando_crm`**, inventory, and main rollout.
 
+To add **only missing** docs (and skip DocTypes that already exist, so `migrate` cannot clobber them):
+
+```bash
+./nando-deployment/sync-fixtures-dev-to-main.sh            # report
+./nando-deployment/sync-fixtures-dev-to-main.sh --apply    # write into custom-apps, then commit / build / deploy yourself
+./nando-deployment/sync-fixtures-main-to-dev.sh --apply    # import missing onto live dev
+```
+
+Do **not** `git pull` inside running containers. Apps are in the image; `migrate` force-imports fixture JSON.
+
 **Short path:**
 
 1. Ensure `fixtures = [...]` in `nando-erp-crm` `hooks.py` (module filter `NANDO_CRM`).

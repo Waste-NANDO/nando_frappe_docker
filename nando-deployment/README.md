@@ -13,7 +13,7 @@ Edit passwords on the server. Do not commit real secrets.
 
 GitHub PAT for private custom app repos: copy [`github.env.example`](github.env.example) to `github.env` (gitignored) or `export GITHUB_TOKEN=...`. See [DEPLOYMENT.md](../DEPLOYMENT.md#github-authentication).
 
-Desk customizations: [README_migrate_customizations.md](README_migrate_customizations.md). Custom field duplicates: [README_customfields.md](README_customfields.md).
+Desk customizations: [README_migrate_customizations.md](README_migrate_customizations.md). Safe missing-only sync: [`sync-fixtures-dev-to-main.sh`](sync-fixtures-dev-to-main.sh) / [`sync-fixtures-main-to-dev.sh`](sync-fixtures-main-to-dev.sh). Custom field duplicates: [README_customfields.md](README_customfields.md).
 
 ## Scripts
 
@@ -43,6 +43,8 @@ Two-step workflow (recommended):
 | [`setup-assets.sh`](setup-assets.sh) | Re-sync assets to volume (materialize only by default; `--full` for runtime bench build) |
 | [`render-compose.sh`](render-compose.sh) | Render compose YAML only (no fetch, no docker build) |
 | [`fetch-custom-app.sh`](fetch-custom-app.sh) | Fetch/update apps into `custom-apps/<key>/` only |
+| [`sync-fixtures-dev-to-main.sh`](sync-fixtures-dev-to-main.sh) | Add missing fixtures from live dev into the main git checkout (no overwrite) |
+| [`sync-fixtures-main-to-dev.sh`](sync-fixtures-main-to-dev.sh) | Import missing fixtures from live main onto the live dev site |
 | [`materialize-assets.sh`](materialize-assets.sh) | Copy `apps/*/public` (incl. `dist/`) into `sites/assets` on the shared volume |
 | [`resolve-env.sh`](resolve-env.sh) | Shared env resolution (sourced by scripts) |
 

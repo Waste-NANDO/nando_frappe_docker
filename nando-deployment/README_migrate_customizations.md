@@ -246,3 +246,32 @@ docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml
 - **Secrets** in fixtures (email passwords, OAuth) must be re-entered on main.
 - **In-container edits** are lost on image rebuild — always commit to git.
 - **Dev rebuild** is safe for DB customizations; only commit fixture JSON to **`main`**, not **`dev`**.
+
+---
+
+## 7. Safe fixture sync (missing only)
+
+A previous main overwrite happened because `migrate` **force-imports** every DocType in the app fixtures. A blind `export` → `git pull` in the container → `migrate` will do that again.
+
+Do **not** use a script that `git pull` / `git rm fixtures/` inside `backend`. Custom apps are baked into the image by [`build-custom-image.sh`](build-custom-image.sh); the `dev` git branch must stay fixture-free.
+
+Two wrappers around [`sync-fixtures.sh`](sync-fixtures.sh):
+
+| Script | Direction | What `--apply` does |
+|--------|-----------|---------------------|
+| [`sync-fixtures-dev-to-main.sh`](sync-fixtures-dev-to-main.sh) | live dev DB → git `main`/`master` checkout | Writes **merged** JSON into `custom-apps/` (adds missing names; keeps dest on conflicts) |
+| [`sync-fixtures-main-to-dev.sh`](sync-fixtures-main-to-dev.sh) | live main DB → live dev DB | Imports **missing** docs onto the dev site (`force=False`). Does **not** commit fixtures to the `dev` branch. |
+
+```bash
+# Report only (default)
+./nando-deployment/sync-fixtures-dev-to-main.sh
+./nando-deployment/sync-fixtures-main-to-dev.sh nando_crm
+
+# Apply after you have read the conflict list
+./nando-deployment/sync-fixtures-dev-to-main.sh --apply
+./nando-deployment/sync-fixtures-main-to-dev.sh --apply
+```
+
+`--force-update` overwrites dest docs that already exist but differ. That is how a unique-index change on `NANDO_Quotations` would land on main again — leave it off unless you intend that.
+
+After `--apply` toward main: review `git status` in `custom-apps/<app>`, commit/push to **`main`** / **`master`**, then `build-custom-image.sh` + `deploy-stack.sh` for `erpnext-main.env`. Backup main first. The sync scripts never migrate.

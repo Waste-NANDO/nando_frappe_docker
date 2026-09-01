@@ -16,18 +16,24 @@ FROM=""
 TO=""
 APPLY=0
 FORCE_UPDATE=0
+DO_COMMIT=0
+DO_PUSH=0
 APPS=()
 
 usage() {
   cat <<EOF
-Usage: $0 --from <dev|main> --to <dev|main> [--apply] [--force-update] [app ...]
+Usage: $0 --from <dev|main> --to <dev|main> [--apply] [--commit] [--push] [--force-update] [app ...]
 
-Default: export both sides, print a missing/conflict report, write /tmp/fixture-sync-*.
-  --apply         dest=main: write merged fixtures into custom-apps (git checkout).
-                  dest=dev:  import missing docs onto the live dev site (force=False).
-  --force-update  overwrite dest docs that already exist but differ (dangerous).
+Compares live Desk exports (not git). Git is the history ledger on main/master.
 
-Does not git commit, push, rebuild, or migrate. Those stay manual.
+Default: export both sites, print missing/conflict report, write /tmp/fixture-sync-*.
+  --apply         import missing docs onto the live dest site (force=False).
+  --force-update  also import conflicting docs from source onto dest (force=True).
+  --commit        after apply, re-export dest and commit fixtures on the app's
+                  main/master branch (history). Does not commit onto git \`dev\`.
+  --push          git push after --commit.
+
+Routine deploy-stack migrate is the wrong apply path while both sites are edited in Desk.
 EOF
 }
 
@@ -36,6 +42,8 @@ while [[ $# -gt 0 ]]; do
     --from) FROM="${2:-}"; shift 2 ;;
     --to) TO="${2:-}"; shift 2 ;;
     --apply) APPLY=1; shift ;;
+    --commit) DO_COMMIT=1; shift ;;
+    --push) DO_PUSH=1; shift ;;
     --force-update) FORCE_UPDATE=1; shift ;;
     -h | --help) usage; exit 0 ;;
     --*)
@@ -59,6 +67,14 @@ if [[ "${TO}" != "dev" && "${TO}" != "main" ]]; then
 fi
 if [[ "${FROM}" == "${TO}" ]]; then
   echo "--from and --to must differ" >&2
+  exit 1
+fi
+if [[ "${DO_COMMIT}" -eq 1 && "${APPLY}" -eq 0 ]]; then
+  echo "--commit requires --apply (commit the dest site after import)." >&2
+  exit 1
+fi
+if [[ "${DO_PUSH}" -eq 1 && "${DO_COMMIT}" -eq 0 ]]; then
+  echo "--push requires --commit" >&2
   exit 1
 fi
 
@@ -157,13 +173,57 @@ export_site_fixtures() {
   fi
 }
 
+import_fixture_dir() {
+  local side="$1"
+  local app="$2"
+  local host_dir="$3"
+  local force="$4"
+  if [[ -z "$(find "${host_dir}" -name '*.json' -print -quit 2>/dev/null)" ]]; then
+    return 0
+  fi
+  compose_for "${side}" exec -T backend mkdir -p "/tmp/fixture-import/${app}"
+  compose_for "${side}" cp "${host_dir}" "backend:/tmp/fixture-import/${app}-in"
+  compose_for "${side}" exec -T backend bench --site "${SITE}" console <<PY
+from pathlib import Path
+from frappe.modules.import_file import import_file_by_path
+root = Path("/tmp/fixture-import/${app}-in")
+force = ${force}
+for path in sorted(root.rglob("*.json")):
+    print("import", path, "force", force)
+    import_file_by_path(str(path), force=force)
+frappe.db.commit()
+exit()
+PY
+}
+
+commit_dest_snapshot() {
+  local app="$1"
+  local snapshot_dir="$2"
+  local git_fx repo
+  git_fx="$(host_git_fixtures "${app}")"
+  mkdir -p "${git_fx}"
+  rsync -rl --exclude '.gitkeep' "${snapshot_dir}/" "${git_fx}/"
+  repo="${SCRIPT_DIR}/custom-apps/${app}"
+  git -C "${repo}" add -- "${git_fx#"${repo}/"}" || git -C "${repo}" add -A
+  if git -C "${repo}" diff --cached --quiet; then
+    echo "[git] ${app}: no fixture changes to commit"
+    return 0
+  fi
+  git -C "${repo}" commit -m "fixtures: sync ${FROM} → ${TO} (${app})"
+  if [[ "${DO_PUSH}" -eq 1 ]]; then
+    git -C "${repo}" push origin HEAD
+  else
+    echo "[git] ${app}: committed on $(git -C "${repo}" branch --show-current). Push when ready."
+  fi
+}
+
 MERGE_FLAGS=()
 if [[ "${FORCE_UPDATE}" -eq 1 ]]; then
   MERGE_FLAGS+=(--force-update)
 fi
 
-if [[ "${TO}" == "main" ]]; then
-  echo "[main] fetch git branches into custom-apps/"
+if [[ "${DO_COMMIT}" -eq 1 ]]; then
+  echo "[git] fetch main/master checkouts for history commits"
   "${SCRIPT_DIR}/fetch-custom-app.sh" "$(stack_env main)"
 fi
 
@@ -179,67 +239,44 @@ for app in "${APPS[@]}"; do
   dest_dir="${WORKDIR}/${app}/dest"
   merged_dir="${WORKDIR}/${app}/merged"
   missing_dir="${WORKDIR}/${app}/missing"
-  mkdir -p "${src_dir}" "${dest_dir}" "${merged_dir}" "${missing_dir}"
+  changed_dir="${WORKDIR}/${app}/changed"
+  mkdir -p "${src_dir}" "${dest_dir}" "${merged_dir}" "${missing_dir}" "${changed_dir}"
 
   export_site_fixtures "${FROM}" "${app}" "${src_dir}"
-
-  if [[ "${TO}" == "main" ]]; then
-    git_fx="$(host_git_fixtures "${app}")"
-    if [[ -d "${git_fx}" ]]; then
-      cp -a "${git_fx}/." "${dest_dir}/"
-    fi
-  else
-    export_site_fixtures "${TO}" "${app}" "${dest_dir}"
-  fi
+  export_site_fixtures "${TO}" "${app}" "${dest_dir}"
 
   python3 "${SCRIPT_DIR}/merge-fixtures.py" \
     --source "${src_dir}" \
     --dest "${dest_dir}" \
     --merged-out "${merged_dir}" \
     --missing-out "${missing_dir}" \
+    --changed-out "${changed_dir}" \
     "${MERGE_FLAGS[@]+"${MERGE_FLAGS[@]}"}"
 
   if [[ "${APPLY}" -eq 0 ]]; then
-    echo "Dry run. Inspect ${merged_dir} and ${missing_dir}"
-    echo "Re-run with --apply to write/import."
+    echo "Dry run. Inspect ${merged_dir} / ${missing_dir}"
+    echo "Re-run with --apply to import onto live ${TO}."
+    echo "Add --commit to record dest fixtures on git main/master after apply."
     continue
   fi
 
-  if [[ "${TO}" == "main" ]]; then
-    git_fx="$(host_git_fixtures "${app}")"
-    mkdir -p "${git_fx}"
-    rsync -rl --exclude '.gitkeep' \
-      "${merged_dir}/" "${git_fx}/"
-    echo "Wrote merged fixtures → ${git_fx}"
-    echo "Next:"
-    echo "  cd ${SCRIPT_DIR}/custom-apps/${app}"
-    echo "  git add -A && git status"
-    echo "  git commit && git push origin HEAD"
-    echo "  ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-main.env"
-    echo "  ./nando-deployment/deploy-stack.sh nando-deployment/erpnext-main.env"
-  else
-    if [[ -z "$(find "${missing_dir}" -name '*.json' -print -quit 2>/dev/null)" ]]; then
-      echo "Nothing missing on dev; no import."
-      continue
-    fi
-    compose_for dev exec -T backend mkdir -p "/tmp/fixture-import/${app}"
-    compose_for dev cp "${missing_dir}" "backend:/tmp/fixture-import/${app}"
-    compose_for dev exec -T backend bench --site "${SITE}" console <<PY
-from pathlib import Path
-from frappe.modules.import_file import import_file_by_path
-root = Path("/tmp/fixture-import/${app}")
-for path in sorted(root.rglob("*.json")):
-    print("import", path)
-    import_file_by_path(str(path), force=False)
-frappe.db.commit()
-print("imported missing fixtures for ${app}")
-exit()
-PY
-    compose_for dev exec -T backend bench --site "${SITE}" clear-cache
-    echo "Imported missing fixtures onto the live dev site."
+  echo "[${TO}] import missing docs onto live site"
+  import_fixture_dir "${TO}" "${app}" "${missing_dir}" False
+  if [[ "${FORCE_UPDATE}" -eq 1 ]]; then
+    echo "[${TO}] import conflicting docs from ${FROM} (force=True)"
+    import_fixture_dir "${TO}" "${app}" "${changed_dir}" True
+  fi
+  compose_for "${TO}" exec -T backend bench --site "${SITE}" clear-cache
+
+  if [[ "${DO_COMMIT}" -eq 1 ]]; then
+    snapshot_dir="${WORKDIR}/${app}/dest-after"
+    mkdir -p "${snapshot_dir}"
+    export_site_fixtures "${TO}" "${app}" "${snapshot_dir}"
+    commit_dest_snapshot "${app}" "${snapshot_dir}"
   fi
 done
 
 echo ""
 echo "Done. Work dir kept at ${WORKDIR}"
-echo "Do not migrate main until you have reviewed conflicting DocTypes."
+echo "Conflicts were left on dest unless you passed --force-update."
+echo "Do not use deploy-stack migrate to apply Desk fixtures while both sites are edited in the UI."

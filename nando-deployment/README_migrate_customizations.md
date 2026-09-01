@@ -19,13 +19,13 @@ Three layers — do not confuse them.
 
 | Layer | Dev `:3003` | Main `:3000` |
 |-------|-------------|--------------|
-| **Site DB** | Source of truth for Desk work. Persists across dev rebuilds (`sites` volume). | Gets config from the **image** via `install-app` + `migrate` — not a DB copy from dev. |
-| **App git `dev` branch** | Baked into dev image. **Minimal:** `hooks.py` + skeleton only, **no fixture JSON**. | Not used. |
-| **App git `main` / `master`** | Where exports are committed after promotion. | Baked into main image; `migrate` syncs fixtures into the site. |
+| **Site DB** | Live Desk — UI edits happen here **and** on main | Live Desk — UI edits happen here too |
+| **Git `dev` branch** | App **code** only (`hooks.py` + skeleton). **No fixture JSON** in the image, so rebuild+migrate does not fight Desk. | Not used. |
+| **Git `main` / `master`** | History ledger for fixture snapshots (`--commit`). | Same ledger. Do **not** treat `migrate` after image rebuild as the sync tool while both sites are edited in the UI. |
 
 ```text
-Dev (:3003)     Desk edits → dev DB → export-fixtures --app <app> → copy to git main/master
-Main (:3000)    git main/master → build image → install-app → migrate
+Either site  →  export  →  compare live vs live  →  import missing onto dest
+             →  --commit snapshot of dest onto git main/master  (history)
 ```
 
 **Env boundary** — only apps in `CUSTOM_APP_KEYS` for that stack are built and promoted:
@@ -249,29 +249,33 @@ docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml
 
 ---
 
-## 7. Safe fixture sync (missing only)
+## 7. Bidirectional fixture sync (normal operations)
 
-A previous main overwrite happened because `migrate` **force-imports** every DocType in the app fixtures. A blind `export` → `git pull` in the container → `migrate` will do that again.
+While the ERP structure is still changing, people edit Desk on **both** sites. The old one-way path (export dev → bake into main image → `migrate`) cannot be the daily tool: `migrate` force-imports every document in the image snapshot and will overwrite UI work on the dest site.
 
-Do **not** use a script that `git pull` / `git rm fixtures/` inside `backend`. Custom apps are baked into the image by [`build-custom-image.sh`](build-custom-image.sh); the `dev` git branch must stay fixture-free.
+Use live-vs-live sync instead. Git `main`/`master` is **history**, not the apply engine.
 
-Two wrappers around [`sync-fixtures.sh`](sync-fixtures.sh):
-
-| Script | Direction | What `--apply` does |
-|--------|-----------|---------------------|
-| [`sync-fixtures-dev-to-main.sh`](sync-fixtures-dev-to-main.sh) | live dev DB → git `main`/`master` checkout | Writes **merged** JSON into `custom-apps/` (adds missing names; keeps dest on conflicts) |
-| [`sync-fixtures-main-to-dev.sh`](sync-fixtures-main-to-dev.sh) | live main DB → live dev DB | Imports **missing** docs onto the dev site (`force=False`). Does **not** commit fixtures to the `dev` branch. |
+| Script | Direction |
+|--------|-----------|
+| [`sync-fixtures-dev-to-main.sh`](sync-fixtures-dev-to-main.sh) | live dev → live main |
+| [`sync-fixtures-main-to-dev.sh`](sync-fixtures-main-to-dev.sh) | live main → live dev |
 
 ```bash
-# Report only (default)
+# Report: missing vs same-name conflicts (no writes)
 ./nando-deployment/sync-fixtures-dev-to-main.sh
 ./nando-deployment/sync-fixtures-main-to-dev.sh nando_crm
 
-# Apply after you have read the conflict list
+# Import missing docs onto dest (leaves conflicts on dest)
 ./nando-deployment/sync-fixtures-dev-to-main.sh --apply
-./nando-deployment/sync-fixtures-main-to-dev.sh --apply
+
+# After apply: commit dest snapshot on git main/master (history), then push
+./nando-deployment/sync-fixtures-main-to-dev.sh --apply --commit --push
 ```
 
-`--force-update` overwrites dest docs that already exist but differ. That is how a unique-index change on `NANDO_Quotations` would land on main again — leave it off unless you intend that.
+`--force-update` imports conflicting docs from source onto dest. Use when you **intend** dest to take source’s version (e.g. a field definition you just finished on one site).
 
-After `--apply` toward main: review `git status` in `custom-apps/<app>`, commit/push to **`main`** / **`master`**, then `build-custom-image.sh` + `deploy-stack.sh` for `erpnext-main.env`. Backup main first. The sync scripts never migrate.
+`--commit` always records fixtures on **`main`/`master`**, never on git `dev`, so a later dev image rebuild does not fight the live dev DB.
+
+Routine `deploy-stack.sh` is for image/code/HRMS. Do not rebuild+migrate just to copy Desk customizations.
+
+When the model stabilizes, you can go back to baking a reviewed fixture library into the main image for new sites. Until then, both DBs are editable and sync is this script.

@@ -369,15 +369,15 @@ Dev Desk changes (Custom Fields, Server Scripts, custom DocTypes, roles, workspa
 
 **Full guide:** [`nando-deployment/README_migrate_customizations.md`](nando-deployment/README_migrate_customizations.md) — export CRM customizations into **`nando_crm`**, inventory, and main rollout.
 
-To add **only missing** docs (and skip DocTypes that already exist, so `migrate` cannot clobber them):
+While both sites are edited in Desk, sync live-to-live (git is history, not the apply engine):
 
 ```bash
-./nando-deployment/sync-fixtures-dev-to-main.sh            # report
-./nando-deployment/sync-fixtures-dev-to-main.sh --apply    # write into custom-apps, then commit / build / deploy yourself
-./nando-deployment/sync-fixtures-main-to-dev.sh --apply    # import missing onto live dev
+./nando-deployment/sync-fixtures-dev-to-main.sh                 # report
+./nando-deployment/sync-fixtures-dev-to-main.sh --apply         # import missing onto live main
+./nando-deployment/sync-fixtures-main-to-dev.sh --apply --commit
 ```
 
-Do **not** `git pull` inside running containers. Apps are in the image; `migrate` force-imports fixture JSON.
+Do **not** `git pull` inside running containers, and do not use `deploy-stack` migrate to copy Desk fixtures.
 
 **Short path:**
 

@@ -60,6 +60,7 @@ def merge_file(
     unchanged: list[str] = []
     merged: list[dict[str, Any]] = []
     missing_only: list[dict[str, Any]] = []
+    changed_only: list[dict[str, Any]] = []
 
     for name, dest_doc in dest_by_name.items():
         src = source_by_name.get(name)
@@ -71,6 +72,7 @@ def merge_file(
             merged.append(dest_doc)
             continue
         changed.append(name)
+        changed_only.append(src)
         merged.append(src if force_update else dest_doc)
 
     for name, src in source_by_name.items():
@@ -81,7 +83,7 @@ def merge_file(
         missing_only.append(src)
 
     report = {"added": added, "changed": changed, "unchanged": unchanged}
-    return merged, missing_only, report
+    return merged, missing_only, changed_only, report
 
 
 def iter_json_files(root: Path) -> list[Path]:
@@ -100,6 +102,7 @@ def main() -> int:
     parser.add_argument("--dest", required=True, type=Path)
     parser.add_argument("--merged-out", required=True, type=Path)
     parser.add_argument("--missing-out", required=True, type=Path)
+    parser.add_argument("--changed-out", type=Path, default=None)
     parser.add_argument("--force-update", action="store_true")
     args = parser.parse_args()
 
@@ -107,6 +110,7 @@ def main() -> int:
     dest_root = args.dest.resolve()
     merged_root = args.merged_out.resolve()
     missing_root = args.missing_out.resolve()
+    changed_root = args.changed_out.resolve() if args.changed_out else None
 
     files = {rel(p, source_root) for p in iter_json_files(source_root)}
     files |= {rel(p, dest_root) for p in iter_json_files(dest_root)}
@@ -115,7 +119,7 @@ def main() -> int:
     any_work = False
 
     for rel_path in sorted(files, key=str):
-        merged, missing, report = merge_file(
+        merged, missing, changed_docs, report = merge_file(
             load_docs(source_root / rel_path),
             load_docs(dest_root / rel_path),
             args.force_update,
@@ -123,6 +127,8 @@ def main() -> int:
         write_docs(merged_root / rel_path, merged)
         if missing:
             write_docs(missing_root / rel_path, missing)
+        if changed_root is not None and changed_docs:
+            write_docs(changed_root / rel_path, changed_docs)
         for key in grand:
             for name in report[key]:
                 grand[key].append(f"{rel_path}::{name}")

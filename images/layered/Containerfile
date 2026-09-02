@@ -26,14 +26,9 @@ COPY --chown=frappe:frappe nando-deployment/build-assets-in-image.sh /opt/frappe
 USER frappe
 
 # Public apps are file:// copies from the host (no GitHub PAT inside the build).
-# uv still wants git+https://github.com/frappe/gunicorn and pypika — rewrite to local copies.
+# uv/yarn still request https://github.com/frappe/<dep> — send those at the local copies.
 RUN export APP_INSTALL_ARGS="" && \
-  for dep in /opt/frappe/upstream-apps/*; do \
-    [ -d "${dep}/.git" ] || continue; \
-    name="$(basename "${dep}")"; \
-    case "${name}" in frappe|erpnext|hrms) continue ;; esac; \
-    git config --global url."file://${dep}".insteadOf "https://github.com/frappe/${name}"; \
-  done && \
+  git config --global url."file:///opt/frappe/upstream-apps/".insteadOf "https://github.com/frappe/" && \
   if [ -n "${APPS_JSON_BASE64}" ]; then \
     export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
   fi && \

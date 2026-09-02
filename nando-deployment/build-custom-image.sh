@@ -128,9 +128,30 @@ vendor_frappe_uv_git_deps() {
     repo="${spec%@*}"
     repo="${repo#git+}"
     sha="${spec##*@}"
-    dest="${UPSTREAM_DIR}/$(basename "${repo}")"
+    dest="${UPSTREAM_DIR}/$(basename "${repo}" .git)"
     fetch_public_commit "${dest}" "${repo}" "${sha}"
   done < <(grep -oE 'git\+https://github.com/[^"]+' "${pyproject}" || true)
+}
+
+# yarn install also git-clones frappe forks (e.g. air-datepicker), no commit pin.
+vendor_frappe_js_git_deps() {
+  local pkg="${UPSTREAM_DIR}/frappe/package.json"
+  local spec repo dest
+
+  [[ -f "${pkg}" ]] || return 0
+  while IFS= read -r spec; do
+    repo="${spec#git+}"
+    repo="${repo%%\"*}"
+    repo="${repo%%#*}"
+    dest="${UPSTREAM_DIR}/$(basename "${repo}" .git)"
+    if [[ -d "${dest}/.git" ]]; then
+      echo "Fetching public ${dest##*/} (yarn git dep, no PAT)..."
+      git -C "${dest}" fetch --depth 1 origin
+    else
+      echo "Fetching public ${dest##*/} (yarn git dep, no PAT)..."
+      git clone --depth 1 "${repo}" "${dest}"
+    fi
+  done < <(grep -oE 'git\+https://github.com/frappe/[^"]+' "${pkg}" || true)
 }
 
 write_apps_json() {
@@ -199,6 +220,7 @@ if should_build_image; then
   fetch_public_git "${UPSTREAM_DIR}/frappe" \
     "${FRAPPE_REPO:-https://github.com/frappe/frappe.git}" "${FRAPPE_VERSION}"
   vendor_frappe_uv_git_deps
+  vendor_frappe_js_git_deps
   fetch_public_git "${UPSTREAM_DIR}/erpnext" \
     "${ERPNEXT_REPO:-https://github.com/frappe/erpnext.git}" "${ERPNEXT_VERSION}"
   if include_hrms_enabled "${INCLUDE_HRMS}"; then

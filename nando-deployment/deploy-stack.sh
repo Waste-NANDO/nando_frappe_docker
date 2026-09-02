@@ -184,10 +184,7 @@ compose exec backend bash -c '
     app=$(basename "${app_path}")
     rm -rf "sites/assets/${app}"
   done
-  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh \
-    || echo "materialize-assets.sh could not sync baked manifests; rebuilding from cached dist..."
-  bash /home/frappe/frappe-bench/sync-assets-manifest.sh 2>/dev/null \
-    || { rm -f sites/assets/*.json; bench build --production --using-cached; }
+  FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh
 '
 
 if ! verify_assets_manifest backend; then

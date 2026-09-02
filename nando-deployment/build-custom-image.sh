@@ -99,6 +99,40 @@ fetch_public_git() {
   fi
 }
 
+# uv pip install of frappe pulls git+https://github.com/frappe/{gunicorn,pypika}@<sha>
+fetch_public_commit() {
+  local dest="$1"
+  local url="$2"
+  local sha="$3"
+
+  echo "Fetching public ${dest##*/} @ ${sha:0:8} (no PAT)..."
+  mkdir -p "$(dirname "${dest}")"
+  if [[ -d "${dest}/.git" ]]; then
+    git -C "${dest}" remote set-url origin "${url}"
+    git -C "${dest}" fetch --depth 1 origin "${sha}"
+    git -C "${dest}" checkout --detach FETCH_HEAD
+  else
+    rm -rf "${dest}"
+    git clone --filter=blob:none --no-checkout "${url}" "${dest}"
+    git -C "${dest}" fetch --depth 1 origin "${sha}"
+    git -C "${dest}" checkout --detach FETCH_HEAD
+  fi
+}
+
+vendor_frappe_uv_git_deps() {
+  local pyproject="${UPSTREAM_DIR}/frappe/pyproject.toml"
+  local spec repo sha dest
+
+  [[ -f "${pyproject}" ]] || return 0
+  while IFS= read -r spec; do
+    repo="${spec%@*}"
+    repo="${repo#git+}"
+    sha="${spec##*@}"
+    dest="${UPSTREAM_DIR}/$(basename "${repo}")"
+    fetch_public_commit "${dest}" "${repo}" "${sha}"
+  done < <(grep -oE 'git\+https://github.com/[^"]+' "${pyproject}" || true)
+}
+
 write_apps_json() {
   local outfile="$1"
   local first=1
@@ -164,6 +198,7 @@ if should_build_image; then
   mkdir -p "${UPSTREAM_DIR}"
   fetch_public_git "${UPSTREAM_DIR}/frappe" \
     "${FRAPPE_REPO:-https://github.com/frappe/frappe.git}" "${FRAPPE_VERSION}"
+  vendor_frappe_uv_git_deps
   fetch_public_git "${UPSTREAM_DIR}/erpnext" \
     "${ERPNEXT_REPO:-https://github.com/frappe/erpnext.git}" "${ERPNEXT_VERSION}"
   if include_hrms_enabled "${INCLUDE_HRMS}"; then
@@ -205,6 +240,7 @@ if should_build_image; then
 
   docker buildx build \
     --load \
+    --network=host \
     --build-arg FRAPPE_PATH="file:///opt/frappe/upstream-apps/frappe" \
     --build-arg FRAPPE_BRANCH="${FRAPPE_BRANCH}" \
     --build-arg FRAPPE_VERSION="${FRAPPE_VERSION}" \

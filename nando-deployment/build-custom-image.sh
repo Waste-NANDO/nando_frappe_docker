@@ -14,6 +14,7 @@ source "${SCRIPT_DIR}/resolve-env.sh"
 ENV_FILE="$(resolve_env_file "${SCRIPT_DIR}" "${1:-}")"
 FETCH_SCRIPT="${SCRIPT_DIR}/fetch-custom-app.sh"
 LOCAL_APPS_DIR="${SCRIPT_DIR}/custom-apps"
+UPSTREAM_DIR="${SCRIPT_DIR}/upstream-apps"
 
 set -a
 # shellcheck disable=SC1090
@@ -73,6 +74,31 @@ render_compose() {
     -f "${SCRIPT_DIR}/compose.backup.yaml"
 }
 
+# Public frappe/erpnext/hrms — clone on the host without the private-repo PAT.
+fetch_public_git() {
+  local dest="$1"
+  local url="$2"
+  local ref="$3"
+
+  echo "Fetching public ${dest##*/} @ ${ref} (no PAT)..."
+  mkdir -p "$(dirname "${dest}")"
+  if [[ -d "${dest}/.git" ]]; then
+    git -C "${dest}" remote set-url origin "${url}"
+    if ! git -C "${dest}" fetch --depth 1 origin "refs/tags/${ref}:refs/tags/${ref}"; then
+      git -C "${dest}" fetch --depth 1 origin "${ref}"
+    fi
+    if git -C "${dest}" rev-parse "refs/tags/${ref}" >/dev/null 2>&1; then
+      git -C "${dest}" checkout -B "${ref}" "refs/tags/${ref}"
+    else
+      git -C "${dest}" checkout -B "${ref}" FETCH_HEAD
+    fi
+  else
+    rm -rf "${dest}"
+    git clone --depth 1 --branch "${ref}" "${url}" "${dest}"
+    git -C "${dest}" checkout -B "${ref}"
+  fi
+}
+
 write_apps_json() {
   local outfile="$1"
   local first=1
@@ -81,7 +107,7 @@ write_apps_json() {
   {
     echo '['
     echo '  {'
-    echo '    "url": "https://github.com/frappe/erpnext.git",'
+    echo '    "url": "file:///opt/frappe/upstream-apps/erpnext",'
     echo "    \"branch\": \"${ERPNEXT_VERSION}\""
     echo -n '  }'
     first=0
@@ -101,7 +127,7 @@ write_apps_json() {
     if include_hrms_enabled "${INCLUDE_HRMS}"; then
       echo ','
       echo '  {'
-      echo "    \"url\": \"${HRMS_REPO}\","
+      echo '    "url": "file:///opt/frappe/upstream-apps/hrms",'
       echo "    \"branch\": \"${HRMS_BRANCH}\""
       echo -n '  }'
     fi
@@ -135,6 +161,15 @@ if should_build_image; then
     done
   fi
 
+  mkdir -p "${UPSTREAM_DIR}"
+  fetch_public_git "${UPSTREAM_DIR}/frappe" \
+    "${FRAPPE_REPO:-https://github.com/frappe/frappe.git}" "${FRAPPE_VERSION}"
+  fetch_public_git "${UPSTREAM_DIR}/erpnext" \
+    "${ERPNEXT_REPO:-https://github.com/frappe/erpnext.git}" "${ERPNEXT_VERSION}"
+  if include_hrms_enabled "${INCLUDE_HRMS}"; then
+    fetch_public_git "${UPSTREAM_DIR}/hrms" "${HRMS_REPO}" "${HRMS_BRANCH}"
+  fi
+
   apps_json="$(mktemp)"
   trap 'rm -f "${apps_json}"' EXIT
 
@@ -161,7 +196,6 @@ if should_build_image; then
     done
   fi
   echo "  image:            ${CUSTOM_IMAGE}:${CUSTOM_TAG}"
-  load_github_token "${SCRIPT_DIR}/github.env"
   if [[ "${build_assets_arg}" -eq 1 ]]; then
     echo "Asset compile runs inside docker build — expect 10–20 minutes with HRMS."
     if [[ "${build_hrms_full_arg}" -eq 0 ]]; then
@@ -171,8 +205,7 @@ if should_build_image; then
 
   docker buildx build \
     --load \
-    --secret id=github_token,env=GITHUB_TOKEN \
-    --build-arg FRAPPE_PATH="https://github.com/frappe/frappe" \
+    --build-arg FRAPPE_PATH="file:///opt/frappe/upstream-apps/frappe" \
     --build-arg FRAPPE_BRANCH="${FRAPPE_BRANCH}" \
     --build-arg FRAPPE_VERSION="${FRAPPE_VERSION}" \
     --build-arg APPS_JSON_BASE64="${APPS_JSON_BASE64}" \

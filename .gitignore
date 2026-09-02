@@ -11,6 +11,8 @@ nando-deployment/backups/
 nando-deployment/github.env
 nando-deployment/custom-apps/*
 !nando-deployment/custom-apps/.gitkeep
+nando-deployment/upstream-apps/*
+!nando-deployment/upstream-apps/.gitkeep
 # Legacy single-app checkout (deprecated — use custom-apps/)
 nando-deployment/custom-app-src/*
 !nando-deployment/custom-app-src/.gitkeep

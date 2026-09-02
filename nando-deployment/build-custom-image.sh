@@ -38,6 +38,16 @@ HRMS_BRANCH="${HRMS_BRANCH:-version-16}"
 CUSTOM_IMAGE="${CUSTOM_IMAGE:-nando-erpnext-custom}"
 CUSTOM_TAG="${CUSTOM_TAG:-${ERPNEXT_VERSION}-custom}"
 FRAPPE_BRANCH="${FRAPPE_BRANCH:-version-16}"
+FRAPPE_VERSION="${FRAPPE_VERSION:-}"
+if [[ -z "${FRAPPE_VERSION}" ]]; then
+  echo "FRAPPE_VERSION must be a Frappe git tag (e.g. v16.20.0) in ${ENV_FILE}" >&2
+  echo "Do not use FRAPPE_BRANCH=version-16 for the framework — that branch floats." >&2
+  exit 1
+fi
+if [[ "${FRAPPE_VERSION}" == "version-16" || "${FRAPPE_VERSION}" == "develop" ]]; then
+  echo "FRAPPE_VERSION=${FRAPPE_VERSION} is a moving line. Pin a release tag (e.g. v16.20.0)." >&2
+  exit 1
+fi
 BUILD_ASSETS_IN_IMAGE="${BUILD_ASSETS_IN_IMAGE:-yes}"
 BENCH_BUILD_NODE_MEMORY_MB="${BENCH_BUILD_NODE_MEMORY_MB:-6144}"
 BUILD_HRMS_FULL="${BUILD_HRMS_FULL:-0}"
@@ -133,6 +143,24 @@ if should_build_image; then
   APPS_JSON_BASE64="$(base64 < "${apps_json}" | tr -d '\n')"
 
   echo "Building image (BUILD_ASSETS_IN_IMAGE=${build_assets_arg}, node heap ${BENCH_BUILD_NODE_MEMORY_MB}MB)..."
+  echo "Pins:"
+  echo "  Docker base:      frappe/build:${FRAPPE_BRANCH} / frappe/base:${FRAPPE_BRANCH}"
+  echo "  frappe:           ${FRAPPE_VERSION}"
+  echo "  erpnext:          ${ERPNEXT_VERSION}"
+  if include_hrms_enabled "${INCLUDE_HRMS}"; then
+    echo "  hrms:             ${HRMS_BRANCH}"
+  fi
+  if include_custom_app_enabled "${INCLUDE_CUSTOM_APP}"; then
+    read -r -a _pin_keys <<< "$(resolve_custom_app_keys)"
+    for key in "${_pin_keys[@]}"; do
+      key="$(echo "${key}" | xargs)"
+      [[ -z "${key}" ]] && continue
+      prefix="$(custom_app_env_prefix "${key}")"
+      branch_var="${prefix}_BRANCH"
+      echo "  ${key}:     ${!branch_var:-default}"
+    done
+  fi
+  echo "  image:            ${CUSTOM_IMAGE}:${CUSTOM_TAG}"
   if [[ "${build_assets_arg}" -eq 1 ]]; then
     echo "Asset compile runs inside docker build — expect 10–20 minutes with HRMS."
     if [[ "${build_hrms_full_arg}" -eq 0 ]]; then
@@ -144,6 +172,7 @@ if should_build_image; then
     --load \
     --build-arg FRAPPE_PATH="https://github.com/frappe/frappe" \
     --build-arg FRAPPE_BRANCH="${FRAPPE_BRANCH}" \
+    --build-arg FRAPPE_VERSION="${FRAPPE_VERSION}" \
     --build-arg APPS_JSON_BASE64="${APPS_JSON_BASE64}" \
     --build-arg BUILD_ASSETS_IN_IMAGE="${build_assets_arg}" \
     --build-arg BENCH_BUILD_NODE_MEMORY_MB="${BENCH_BUILD_NODE_MEMORY_MB}" \

@@ -5,6 +5,8 @@ ARG FRAPPE_BRANCH=version-16
 FROM frappe/build:${FRAPPE_BRANCH} AS builder
 
 ARG FRAPPE_BRANCH=version-16
+# Git tag/branch for `bench init` (frappe app). Not the Docker base tag above.
+ARG FRAPPE_VERSION
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 ARG APPS_JSON_BASE64
 ARG BUILD_ASSETS_IN_IMAGE=1
@@ -27,7 +29,7 @@ RUN export APP_INSTALL_ARGS="" && \
     export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
   fi && \
   bench init ${APP_INSTALL_ARGS}\
-    --frappe-branch=${FRAPPE_BRANCH} \
+    --frappe-branch=${FRAPPE_VERSION} \
     --frappe-path=${FRAPPE_PATH} \
     --no-procfile \
     --no-backups \

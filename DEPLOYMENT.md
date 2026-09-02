@@ -435,9 +435,11 @@ Env variables:
 INCLUDE_HRMS=yes
 HRMS_BRANCH=v16.5.0
 FRAPPE_BRANCH=version-16
+FRAPPE_VERSION=v16.20.0
+ERPNEXT_VERSION=v16.5.0
 ```
 
-`ERPNEXT_VERSION` (e.g. `v16.5.0`) is the ERPNext **git** tag in `apps.json`. `FRAPPE_BRANCH` must be `version-16` for `frappe/build` and `frappe/base` Docker images — do not set it to `v16.5.0`.
+`FRAPPE_BRANCH` is only the `frappe/build` / `frappe/base` Docker tag — keep it on `version-16`. `FRAPPE_VERSION` is the Frappe **git** tag `bench init` checks out (required; do not use `version-16`, that branch floats). `ERPNEXT_VERSION` and `HRMS_BRANCH` are git tags in `apps.json`.
 
 **Pin `HRMS_BRANCH` to the same tag as `ERPNEXT_VERSION`** (e.g. both `v16.5.0`). The moving `version-16` branch can install HRMS 16.7.x against ERPNext 16.5.0 and break setup (e.g. `AttributeError: repost_allowed_types` on Accounts Settings). When you bump ERPNext, bump `HRMS_BRANCH` and rebuild the image.
 

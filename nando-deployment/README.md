@@ -22,8 +22,8 @@ Generated `erpnext-*.yaml` are gitignored (secrets). Re-render after env changes
 Prepares the Docker image and compose file. **Does not** start containers, migrate, or `install-app`.
 
 1. If `INCLUDE_CUSTOM_APP=yes`: [`fetch-custom-app.sh`](fetch-custom-app.sh) clones/updates `custom-apps/<app>` on the branch from the env (`NANDO_CRM_BRANCH`, …).
-2. Writes `apps.json` (ERPNext + those apps + HRMS if `INCLUDE_HRMS=yes`).
-3. `docker build` → `CUSTOM_IMAGE:CUSTOM_TAG` (Desk assets compiled in the image when `BUILD_ASSETS_IN_IMAGE=yes`).
+2. Writes `apps.json` (ERPNext + those apps + HRMS if `INCLUDE_HRMS=yes`), all from release tags in the env.
+3. `docker build` → `CUSTOM_IMAGE:CUSTOM_TAG` (Frappe from `FRAPPE_VERSION`, base image from `FRAPPE_BRANCH`). Desk assets compiled when `BUILD_ASSETS_IN_IMAGE=yes`.
 4. Renders `erpnext-dev.yaml` / `erpnext-main.yaml`.
 
 Use after `hooks.py` / Python / ERPNext version / HRMS pin changes. Bump `CUSTOM_TAG` when image contents change (`PULL_POLICY=never`). HRMS and custom apps still need a one-time `bench install-app` on the site.

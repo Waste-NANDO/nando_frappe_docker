@@ -161,6 +161,7 @@ if should_build_image; then
     done
   fi
   echo "  image:            ${CUSTOM_IMAGE}:${CUSTOM_TAG}"
+  load_github_token "${SCRIPT_DIR}/github.env"
   if [[ "${build_assets_arg}" -eq 1 ]]; then
     echo "Asset compile runs inside docker build — expect 10–20 minutes with HRMS."
     if [[ "${build_hrms_full_arg}" -eq 0 ]]; then
@@ -170,6 +171,7 @@ if should_build_image; then
 
   docker buildx build \
     --load \
+    --secret id=github_token,env=GITHUB_TOKEN \
     --build-arg FRAPPE_PATH="https://github.com/frappe/frappe" \
     --build-arg FRAPPE_BRANCH="${FRAPPE_BRANCH}" \
     --build-arg FRAPPE_VERSION="${FRAPPE_VERSION}" \

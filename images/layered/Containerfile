@@ -24,7 +24,13 @@ COPY --chown=frappe:frappe nando-deployment/build-assets-in-image.sh /opt/frappe
 
 USER frappe
 
-RUN export APP_INSTALL_ARGS="" && \
+# GITHUB_TOKEN is a BuildKit secret (not a build-arg) so it is not stored in the image.
+# Cloud IPs often get 401 on unauthenticated git ls-remote to github.com.
+RUN --mount=type=secret,id=github_token \
+  if [ -f /run/secrets/github_token ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/github_token)@github.com/".insteadOf "https://github.com/"; \
+  fi && \
+  export APP_INSTALL_ARGS="" && \
   if [ -n "${APPS_JSON_BASE64}" ]; then \
     export APP_INSTALL_ARGS="--apps_path=/opt/frappe/apps.json"; \
   fi && \

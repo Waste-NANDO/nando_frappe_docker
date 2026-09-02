@@ -125,4 +125,10 @@ if [[ "${MANIFEST_SYNC_NEEDED}" -eq 1 ]] || [[ ! -f "${ASSETS}/assets.json" ]]; 
   sync_assets_manifest
 fi
 
+REWRITE="${BENCH_ROOT}/rewrite-assets-manifest.py"
+if [[ "${SKIP_REWRITE:-0}" != "1" && -f "${REWRITE}" ]]; then
+  echo "[materialize-assets] aligning assets.json hashes with files on volume"
+  python3 "${REWRITE}"
+fi
+
 echo "[materialize-assets] Done"

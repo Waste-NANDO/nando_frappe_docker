@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Regenerate sites/assets/assets.json from dist/ already in apps/ (fast; no full yarn build).
-# Run after materialize when HTML references bundle hashes that do not exist on the volume.
+# Align sites/assets/assets.json with hashed bundles already on the volume.
+# Backend images have no node — do not call bench build here.
 set -euo pipefail
 
 BENCH_ROOT="${BENCH_ROOT:-/home/frappe/frappe-bench}"
-ASSETS="${BENCH_ROOT}/sites/assets"
+REWRITE="${BENCH_ROOT}/rewrite-assets-manifest.py"
 
 cd "${BENCH_ROOT}"
 
-shopt -s nullglob
-rm -f "${ASSETS}"/*.json
-shopt -u nullglob
+if [[ ! -f "${REWRITE}" ]]; then
+  echo "[sync-assets-manifest] missing ${REWRITE}" >&2
+  exit 1
+fi
 
-echo "[sync-assets-manifest] bench build --production --using-cached"
-bench build --production --using-cached
+echo "[sync-assets-manifest] rewrite-assets-manifest.py"
+python3 "${REWRITE}"
 echo "[sync-assets-manifest] Done"

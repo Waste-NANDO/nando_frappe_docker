@@ -7,6 +7,7 @@ services:
     volumes:
       - ./nando-deployment/materialize-assets.sh:/home/frappe/frappe-bench/materialize-assets.sh:ro
       - ./nando-deployment/sync-assets-manifest.sh:/home/frappe/frappe-bench/sync-assets-manifest.sh:ro
+      - ./nando-deployment/rewrite-assets-manifest.py:/home/frappe/frappe-bench/rewrite-assets-manifest.py:ro
     environment:
       MATERIALIZE_ASSETS_ON_START: ${MATERIALIZE_ASSETS_ON_START:-1}
     command:
@@ -21,10 +22,11 @@ services:
         if [[ -n "$$FRAPPE_HOST_NAME" ]]; then bench set-config -g host_name "$$FRAPPE_HOST_NAME"; fi;
         if [[ "$${MATERIALIZE_ASSETS_ON_START:-1}" = "1" ]]; then
           FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh ||
-            bash /home/frappe/frappe-bench/sync-assets-manifest.sh;
+            python3 /home/frappe/frappe-bench/rewrite-assets-manifest.py;
         fi
 
   backend:
     volumes:
       - ./nando-deployment/materialize-assets.sh:/home/frappe/frappe-bench/materialize-assets.sh:ro
       - ./nando-deployment/sync-assets-manifest.sh:/home/frappe/frappe-bench/sync-assets-manifest.sh:ro
+      - ./nando-deployment/rewrite-assets-manifest.py:/home/frappe/frappe-bench/rewrite-assets-manifest.py:ro

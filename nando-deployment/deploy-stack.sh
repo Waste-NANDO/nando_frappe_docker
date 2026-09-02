@@ -188,15 +188,8 @@ compose exec backend bash -c '
 '
 
 if ! verify_assets_manifest backend; then
-  echo "assets.json is stale or incomplete; rebuilding manifest from cached dist..."
-  compose exec backend bash -c '
-    set -euo pipefail
-    cd /home/frappe/frappe-bench
-    rm -f sites/assets/*.json
-    bench build --production --using-cached
-    FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh \
-      || bash /home/frappe/frappe-bench/sync-assets-manifest.sh
-  '
+  echo "assets.json is stale or incomplete; aligning hashes with files on the volume..."
+  compose exec backend python3 /home/frappe/frappe-bench/rewrite-assets-manifest.py
   verify_assets_manifest backend
 fi
 

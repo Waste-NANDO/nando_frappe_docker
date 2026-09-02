@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Point sites/assets/assets*.json at the hashed bundles that exist on disk."""
+"""Point sites/assets/assets*.json at the hashed bundles that exist on disk.
+
+Backend images have no node, so this replaces `bench build --using-cached`.
+If the volume has no real hashed files (missing copy or bench-build symlinks),
+it rematerializes from apps/*/public first.
+"""
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 BENCH = Path("/home/frappe/frappe-bench")
@@ -22,6 +29,17 @@ def restore_baked() -> None:
         if not dest.is_file():
             shutil.copy2(src, dest)
             print(f"restored {dest.name} from baked")
+
+
+def rematerialize() -> None:
+    script = BENCH / "materialize-assets.sh"
+    if not script.is_file():
+        raise SystemExit("no hashed bundles under sites/assets and materialize-assets.sh missing")
+    env = os.environ.copy()
+    env["FORCE_MATERIALIZE"] = "1"
+    env["SKIP_REWRITE"] = "1"
+    print("no hashed bundles on volume; rematerializing from apps/")
+    subprocess.run(["bash", str(script)], check=True, env=env, cwd=BENCH)
 
 
 def index_files() -> dict[str, list[str]]:
@@ -78,7 +96,11 @@ def main() -> None:
     restore_baked()
     found = index_files()
     if not found:
-        raise SystemExit("no hashed bundles under sites/assets")
+        rematerialize()
+        restore_baked()
+        found = index_files()
+    if not found:
+        raise SystemExit("no hashed bundles under sites/assets after rematerialize")
     for name in ("assets.json", "assets-rtl.json"):
         path = ASSETS / name
         if path.is_file():

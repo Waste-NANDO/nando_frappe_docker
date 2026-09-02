@@ -58,6 +58,12 @@ elif ! build_assets_in_image_enabled "${BUILD_ASSETS_IN_IMAGE}"; then
 fi
 
 if [[ "${run_bench_build}" -eq 1 ]]; then
+  if ! compose exec -T backend bash -lc 'command -v node >/dev/null'; then
+    echo "ERROR: backend image has no node; cannot run bench build on the server." >&2
+    echo "Rebuild the image instead:" >&2
+    echo "  ./nando-deployment/build-custom-image.sh ${ENV_FILE}" >&2
+    exit 1
+  fi
   echo "Building assets in backend (this may take 10–15 minutes with HRMS)..."
   compose exec backend bench build --force
 else
@@ -76,8 +82,8 @@ compose exec backend bash -c '
   FORCE_MATERIALIZE=1 bash /home/frappe/frappe-bench/materialize-assets.sh
 '
 
-# Do not run sync-assets-manifest.sh / bench build here. That rewrites assets.json
-# with new hashes and leaves nginx serving the previous files (unstyled Desk).
+# materialize-assets.sh copies baked assets.json then rewrite-assets-manifest.py
+# retargets hashes to the files on the volume. Do not run bench build (no node).
 
 echo "Verifying login/website bundles on frontend volume..."
 verify_failed=0

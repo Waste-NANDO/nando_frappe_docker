@@ -13,7 +13,7 @@ With **`BUILD_ASSETS_IN_IMAGE=yes`** (default in `erpnext-*.env`):
 
 1. **`bench build --production`** runs **inside `docker build`** → bundles live in `apps/*/public/dist/` in the image.
 2. **`deploy-stack.sh`** or **`compose up -d`** → **configurator** force-runs **`materialize-assets.sh`** → copies into **`sites/assets/`** on the shared volume.
-3. **`deploy-stack.sh`** verifies `sites/assets/assets.json` references files that exist on the shared volume, auto-rebuilds the manifest from cached dist if needed, clears Redis cache, and restarts frontend.
+3. **`deploy-stack.sh`** verifies `sites/assets/assets.json` references files that exist on the shared volume, rewrites hashed paths to match those files if needed, clears Redis cache, and restarts frontend.
 
 **Minimum deploy after code changes:**
 
@@ -48,9 +48,9 @@ The volume masks image `sites/` content. **Materialize** copies real files from 
 | `BUILD_ASSETS_IN_IMAGE=no` | `setup-assets.sh <env> --full` after each deploy |
 | Normal deploy with in-image build | **Not needed** (configurator handles materialize) |
 
-**Default** (`setup-assets.sh` without `--full`): force-materialize + sync/rebuild `assets.json` from cached dist + clear-cache + restart frontend — **no full runtime bundle build**.
+**Default** (`setup-assets.sh` without `--full`): force-materialize + rewrite `assets.json` hashes to match files on the volume + clear-cache + restart frontend — **no Node / no runtime bundle build**.
 
-**`--full`:** runtime `bench build --force` + materialize + clear-cache + restart frontend (~10–15 min with HRMS).
+**`--full`:** runtime `bench build --force` + materialize + clear-cache + restart frontend. The backend image has **no `node`**, so this fails unless you use a builder image. Rebuild the Docker image instead.
 
 ---
 
@@ -131,7 +131,7 @@ Refused to apply style from '.../website.bundle.NQ53BIH4.css' because its MIME t
 ./nando-deployment/setup-assets.sh nando-deployment/erpnext-main.env
 ```
 
-`deploy-stack.sh` and `setup-assets.sh` both force-materialize app `dist/` trees, **delete stale `sites/assets/assets.json`**, then sync the manifest from `.baked-assets/` in the image or run `bench build --production --using-cached`. `deploy-stack.sh` also verifies that every hashed bundle referenced by `assets.json` exists on the frontend volume.
+`deploy-stack.sh` and `setup-assets.sh` force-materialize app `dist/` trees, copy `.baked-assets/` manifests, then run [`rewrite-assets-manifest.py`](rewrite-assets-manifest.py) so `assets.json` hashes match the files on the volume. **Do not** run `bench build` on backend — that image has no `node`, and a failed build can replace copied files with broken symlinks. `deploy-stack.sh` verifies that every hashed bundle referenced by `assets.json` exists on the frontend volume.
 
 If that still fails, rebuild the image once (so `.baked-assets/` exists), then redeploy:
 
@@ -162,6 +162,7 @@ Symlinks under `sites/assets` → `apps/` break across containers when **`bench 
 |--------|---------|
 | [`deploy-stack.sh`](deploy-stack.sh) | Deploy running stack (default: no image rebuild) |
 | [`setup-assets.sh`](setup-assets.sh) | Re-sync volume; `--full` = runtime bench build |
-| [`materialize-assets.sh`](materialize-assets.sh) | Copy `apps/*/public` → `sites/assets/` |
+| [`materialize-assets.sh`](materialize-assets.sh) | Copy `apps/*/public` → `sites/assets/`, then rewrite manifest hashes |
+| [`rewrite-assets-manifest.py`](rewrite-assets-manifest.py) | Point `assets.json` at hashed files on the volume (no Node) |
 
 Related: [README_workspaces.md](README_workspaces.md), [DEPLOYMENT.md](../DEPLOYMENT.md)

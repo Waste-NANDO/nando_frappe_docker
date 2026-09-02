@@ -205,17 +205,36 @@ import_fixture_dir() {
   fi
   compose_for "${side}" exec -T backend mkdir -p "/tmp/fixture-import/${app}"
   compose_for "${side}" cp "${host_dir}" "backend:/tmp/fixture-import/${app}-in"
-  compose_for "${side}" exec -T backend bench --site "${SITE}" console <<PY
+  compose_for "${side}" exec -T backend bash -lc "
+    mkdir -p /home/frappe/logs /home/frappe/frappe-bench/logs \
+      /home/frappe/frappe-bench/sites/${SITE}/logs
+    cd /home/frappe/frappe-bench/sites
+    ../env/bin/python - \"${SITE}\" \"${app}\" ${force} <<'PY'
+import sys
 from pathlib import Path
+
+import frappe
 from frappe.modules.import_file import import_file_by_path
-root = Path("/tmp/fixture-import/${app}-in")
-force = ${force}
-for path in sorted(root.rglob("*.json")):
-    print("import", path, "force", force)
+
+site, app, force = sys.argv[1], sys.argv[2], sys.argv[3] == 'True'
+frappe.init(site=site)
+frappe.connect()
+root = Path(f'/tmp/fixture-import/{app}-in')
+order = {
+    'doctype.json': 0,
+    'role.json': 1,
+    'custom_field.json': 2,
+    'property_setter.json': 3,
+}
+paths = sorted(root.rglob('*.json'), key=lambda p: (order.get(p.name, 10), p.name))
+for path in paths:
+    print('import', path, 'force', force, flush=True)
     import_file_by_path(str(path), force=force)
 frappe.db.commit()
-exit()
+print('done', app, flush=True)
+frappe.destroy()
 PY
+  "
 }
 
 commit_dest_snapshot() {

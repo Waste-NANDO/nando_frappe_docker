@@ -18,6 +18,7 @@ APPLY=0
 FORCE_UPDATE=0
 DO_COMMIT=0
 DO_PUSH=0
+SKIP_BACKUP=0
 APPS=()
 ONLY=()
 FILE_NAMES=()
@@ -28,8 +29,12 @@ Usage: $0 --from <dev|main> --to <dev|main> [options] [app ...]
 
 Compares live Desk exports (not git). Git is the history ledger on main/master.
 
-Default: export both sites, print missing/conflict report, write /tmp/fixture-sync-*.
+Default (no --apply): check only — export both sites, print missing/conflict
+report, write /tmp/fixture-sync-*. Does not import onto dest.
+
   --apply         import missing docs onto the live dest site (force=False).
+                  Backs up dest first (database only). Use --skip-backup to skip.
+  --skip-backup   with --apply, do not run bench backup on dest.
   --force-update  also import conflicting docs from source onto dest (force=True).
   --commit        after apply, re-export dest and commit fixtures on the app's
                   main/master branch (history). Does not commit onto git \`dev\`.
@@ -45,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --from) FROM="${2:-}"; shift 2 ;;
     --to) TO="${2:-}"; shift 2 ;;
     --apply) APPLY=1; shift ;;
+    --skip-backup) SKIP_BACKUP=1; shift ;;
     --commit) DO_COMMIT=1; shift ;;
     --push) DO_PUSH=1; shift ;;
     --force-update) FORCE_UPDATE=1; shift ;;
@@ -88,6 +94,10 @@ if [[ "${DO_PUSH}" -eq 1 && "${DO_COMMIT}" -eq 0 ]]; then
   echo "--push requires --commit" >&2
   exit 1
 fi
+if [[ "${SKIP_BACKUP}" -eq 1 && "${APPLY}" -eq 0 ]]; then
+  echo "--skip-backup only applies with --apply" >&2
+  exit 1
+fi
 
 stack_env() {
   case "$1" in
@@ -112,6 +122,7 @@ load_stack() {
 
 compose_for() {
   local side="$1"
+  shift
   load_stack "${side}"
   local compose_file="${COMPOSE_FILE_OUTPUT:-}"
   if [[ "${compose_file}" != /* ]]; then
@@ -228,6 +239,20 @@ commit_dest_snapshot() {
   fi
 }
 
+dir_has_json() {
+  [[ -n "$(find "$1" -name '*.json' -print -quit 2>/dev/null)" ]]
+}
+
+backup_dest_site() {
+  echo "[${TO}] bench backup (database, no files) before import"
+  echo "        Large sites can take a while. Use --skip-backup to skip."
+  compose_for "${TO}" exec -T backend \
+    bench --site "${SITE}" backup
+  echo "[${TO}] backup files in the site private/backups dir (not uploaded to GCS):"
+  compose_for "${TO}" exec -T backend \
+    ls -lh "/home/frappe/frappe-bench/sites/${SITE}/private/backups" || true
+}
+
 MERGE_FLAGS=()
 if [[ "${FORCE_UPDATE}" -eq 1 ]]; then
   MERGE_FLAGS+=(--force-update)
@@ -245,6 +270,8 @@ if [[ "${DO_COMMIT}" -eq 1 ]]; then
   echo "[git] fetch main/master checkouts for history commits"
   "${SCRIPT_DIR}/fetch-custom-app.sh" "$(stack_env main)"
 fi
+
+DEST_BACKED_UP=0
 
 for app in "${APPS[@]}"; do
   app="$(echo "${app}" | xargs)"
@@ -280,6 +307,12 @@ for app in "${APPS[@]}"; do
   fi
 
   echo "[${TO}] import missing docs onto live site"
+  if [[ "${SKIP_BACKUP}" -eq 0 && "${DEST_BACKED_UP}" -eq 0 ]]; then
+    if dir_has_json "${missing_dir}" || { [[ "${FORCE_UPDATE}" -eq 1 ]] && dir_has_json "${changed_dir}"; }; then
+      backup_dest_site
+      DEST_BACKED_UP=1
+    fi
+  fi
   import_fixture_dir "${TO}" "${app}" "${missing_dir}" False
   if [[ "${FORCE_UPDATE}" -eq 1 ]]; then
     echo "[${TO}] import conflicting docs from ${FROM} (force=True)"

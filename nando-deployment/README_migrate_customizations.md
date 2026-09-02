@@ -48,7 +48,7 @@ Optional app args (`nando_crm` …); default is `CUSTOM_APP_KEYS` from the sourc
 1. `export-fixtures --app` on **both** live sites, copy JSON out of the containers.
 2. Compare by document `name` (ignores `modified` / `creation` / owner noise).
 3. Print a report and write `/tmp/fixture-sync-*` (source, dest, missing, conflicts).
-4. Stop there unless you pass flags.
+4. Stop there unless you pass flags. Dest site DB is not changed.
 
 | Result | Meaning | `--apply` |
 |--------|---------|-----------|
@@ -56,6 +56,8 @@ Optional app args (`nando_crm` …); default is `CUSTOM_APP_KEYS` from the sourc
 | Conflict | Same name, different content | Left on dest unless `--force-update` |
 | Identical | Same name, same content | No-op |
 | Dest-only | Name only on dest | Kept |
+
+`--apply` runs `bench backup` on dest first (database only, no private/public files). Files land in `sites/<site>/private/backups/` inside that stack — not GCS. `--skip-backup` skips it. Main’s DB dump can be tens of GB; wait it out or skip if you already have a fresh dump.
 
 `--force-update` imports the source version of conflicts (`force=True`). A DocType import replaces the **whole** DocType, not one field.
 

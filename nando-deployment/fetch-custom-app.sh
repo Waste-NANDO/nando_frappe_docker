@@ -128,6 +128,9 @@ EOF
     -c "http.extraHeader=Authorization: Bearer ${GITHUB_TOKEN}" \
     submodule update --init --recursive
 
+  # Keep FETCH_HEAD group-writable when several users share the checkout.
+  git -C "${target_dir}" config core.sharedRepository group
+
   cat <<EOF
 Custom app checkout ready:
   ${key} → ${target_dir}

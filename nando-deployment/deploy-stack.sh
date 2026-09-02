@@ -145,7 +145,26 @@ if [[ ! -f "${COMPOSE_FILE_OUTPUT}" ]]; then
 fi
 
 echo "Starting containers..."
-compose up -d
+# Re-render so CUSTOM_TAG in the YAML matches the env (build may have failed before render).
+if [[ "${DO_BUILD}" -eq 0 ]]; then
+  "${SCRIPT_DIR}/render-compose.sh" "${ENV_FILE}"
+fi
+
+wanted_image="${CUSTOM_IMAGE}:${CUSTOM_TAG}"
+backend_id="$(compose ps -q backend 2>/dev/null | head -1 || true)"
+running_image=""
+if [[ -n "${backend_id}" ]]; then
+  running_image="$(docker inspect -f '{{.Config.Image}}' "${backend_id}" 2>/dev/null || true)"
+fi
+
+if [[ "${running_image}" != "${wanted_image}" ]]; then
+  echo "Recreating app containers: backend is '${running_image:-none}', want ${wanted_image}"
+  compose up -d --force-recreate --no-deps \
+    configurator backend frontend websocket \
+    queue-short queue-long scheduler backup
+else
+  compose up -d
+fi
 
 echo "Waiting for configurator..."
 configurator_id="$(compose ps -aq configurator 2>/dev/null | head -1 || true)"

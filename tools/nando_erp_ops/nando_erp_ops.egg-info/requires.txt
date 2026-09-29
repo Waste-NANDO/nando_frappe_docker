@@ -1,0 +1,9 @@
+pyyaml>=6.0
+click>=8.1
+boto3>=1.34
+
+[api]
+fastapi>=0.110
+
+[dev]
+pytest>=8.0

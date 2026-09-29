@@ -1,53 +1,46 @@
 # Nando deployment
 
-Ops: **[../DEPLOYMENT.md](../DEPLOYMENT.md)**
+**Pipeline (start here):** **[PIPELINE.md](PIPELINE.md)** · **[guides/](guides/)**
 
-| Env | Stack | Port | Compose project |
-|-----|-------|------|-----------------|
-| [`erpnext-dev.env`](erpnext-dev.env) | Dev | `:3003` | `erpnext` |
-| [`erpnext-main.env`](erpnext-main.env) | Main | `:3000` | `erpnext-main` |
+Infrastructure detail: **[../DEPLOYMENT.md](../DEPLOYMENT.md)** · CLI: **[`../tools/nando_erp_ops`](../tools/nando_erp_ops)**
 
-Passwords live on the server. PAT: copy [`github.env.example`](github.env.example) → `github.env`.
+| Env | Port | Compose project | Env file |
+|-----|------|-----------------|----------|
+| Cloud-dev | `:3003` | `erpnext` | [`erpnext-dev.env`](erpnext-dev.env) |
+| Prod | `:3000` | `erpnext-main` | [`erpnext-main.env`](erpnext-main.env) |
 
-Generated `erpnext-*.yaml` are gitignored (secrets). Re-render after env changes.
+Shared pins: [`versions.env`](versions.env). Structure allowlist: [`structure.yaml`](structure.yaml).
+
+## Active scripts (minimum set)
+
+Prefer the `nando-erp` CLI; these are what it wraps:
+
+| Script | Role |
+|--------|------|
+| [`build-custom-image.sh`](build-custom-image.sh) | Fetch apps, docker build, render compose |
+| [`deploy-stack.sh`](deploy-stack.sh) | up → materialize assets → migrate |
+| [`fetch-custom-app.sh`](fetch-custom-app.sh) | Clone/update `custom-apps/` |
+| [`render-compose.sh`](render-compose.sh) | Compose YAML only |
+| [`refresh-from-gcs.sh`](refresh-from-gcs.sh) | Restore prod SQL from GCS (`nando-erp refresh`) |
+| [`setup-assets.sh`](setup-assets.sh) | Remediation if Desk assets are broken |
+| [`backup-to-gcs.sh`](backup-to-gcs.sh) / [`upload-to-gcs.py`](upload-to-gcs.py) | Backup sidecar |
+| [`materialize-assets.sh`](materialize-assets.sh) / [`rewrite-assets-manifest.py`](rewrite-assets-manifest.py) / [`sync-assets-manifest.sh`](sync-assets-manifest.sh) | Mounted into containers on deploy |
+| [`build-assets-in-image.sh`](build-assets-in-image.sh) | Runs inside Docker image build |
+| [`resolve-env.sh`](resolve-env.sh) | Shared helpers |
 
 ```bash
-./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env   # image + compose; no up
-./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env          # up + migrate; no rebuild
-./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --with-build
+nando-erp build --stack dev && nando-erp deploy dev
+nando-erp promote --yes
 ```
 
-## `build-custom-image.sh <env>`
+## Docs layout
 
-Prepares the Docker image and compose file. **Does not** start containers, migrate, or `install-app`.
+| Path | Contents |
+|------|----------|
+| [PIPELINE.md](PIPELINE.md) | High-level flow |
+| [guides/](guides/) | Step-by-step recipes |
+| [PHASE0_BASELINE.md](PHASE0_BASELINE.md) | One-time prod → git baseline |
+| [reference/](reference/) | Assets, custom fields, workspaces, raw compose snippets |
+| [deprecated/](deprecated/) | Old live-DB sync scripts and docs — **do not use** |
 
-1. If `INCLUDE_CUSTOM_APP=yes`: [`fetch-custom-app.sh`](fetch-custom-app.sh) clones/updates `custom-apps/<app>` on the branch from the env (`NANDO_CRM_BRANCH`, …).
-2. Writes `apps.json` (ERPNext + those apps + HRMS if `INCLUDE_HRMS=yes`), all from release tags in the env.
-3. `docker build` → `CUSTOM_IMAGE:CUSTOM_TAG` (Frappe from `FRAPPE_VERSION`, base image from `FRAPPE_BRANCH`). Desk assets compiled when `BUILD_ASSETS_IN_IMAGE=yes`.
-4. Renders `erpnext-dev.yaml` / `erpnext-main.yaml`.
-
-Use after `hooks.py` / Python / ERPNext version / HRMS pin changes. Bump `CUSTOM_TAG` when image contents change (`PULL_POLICY=never`). HRMS and custom apps still need a one-time `bench install-app` on the site.
-
-## `deploy-stack.sh <env>`
-
-Updates the **running** stack using the existing image. **Does not** rebuild unless `--with-build`.
-
-1. `compose up -d` (wait for configurator).
-2. Copy JS/CSS from the image onto the `sites` volume (materialize) and check `assets.json`.
-3. Stop workers → `bench migrate` → start workers (`--skip-migrate` to skip).
-4. Clear cache, restart frontend, re-check assets.
-
-`--with-build` runs `build-custom-image.sh` first. `migrate` will force-import any fixture JSON **in the image** — do not use deploy to copy Desk UI edits ([README_migrate_customizations.md](README_migrate_customizations.md)).
-
-| Script | Use |
-|--------|-----|
-| [`build-custom-image.sh`](build-custom-image.sh) | Fetch apps, docker build, render compose — see above |
-| [`deploy-stack.sh`](deploy-stack.sh) | `up` + assets + migrate — see above; `--with-build` to rebuild first |
-| [`sync-fixtures-dev-to-main.sh`](sync-fixtures-dev-to-main.sh) / [`-main-to-dev`](sync-fixtures-main-to-dev.sh) | Live Desk sync — [README_migrate_customizations.md](README_migrate_customizations.md) |
-| [`fetch-custom-app.sh`](fetch-custom-app.sh) | Git checkout into `custom-apps/` only |
-| [`render-compose.sh`](render-compose.sh) | Compose YAML only |
-| [`setup-assets.sh`](setup-assets.sh) | Broken JS/CSS — [README_assets.md](README_assets.md) |
-
-Branches: `NANDO_CRM_BRANCH` / `NANDO_FULFILLMENT_BRANCH` in the env file (`dev` vs `main`/`master`).
-
-Also: [`docker_commands.md`](docker_commands.md) · [`README_workspaces.md`](README_workspaces.md) · [`README_customfields.md`](README_customfields.md)
+Passwords live on the server. PAT: copy [`github.env.example`](github.env.example) → `github.env`. Generated `erpnext-*.yaml` are gitignored.

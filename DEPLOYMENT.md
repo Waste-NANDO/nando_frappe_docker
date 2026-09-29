@@ -1,5 +1,7 @@
 # NandoAI ERPNext Deployment Guide
 
+**Develop / promote / refresh workflow:** see **[nando-deployment/PIPELINE.md](nando-deployment/PIPELINE.md)** (high-level + step-by-step guides). This file covers stacks, Traefik, volumes, and low-level compose ops.
+
 Two isolated Frappe/ERPNext stacks on one server:
 
 | Stack | URL | Compose project | Purpose |
@@ -24,20 +26,19 @@ Each stack has its own Traefik, Redis, workers, scheduler, and backup sidecar. T
 
 ```
 nando-deployment/
-├── certs/                    # TLS (key.pem, nando-erp-server.crt — gitignored)
-├── compose.custom-tls.yaml   # Traefik + per-project routing
-├── compose.backup.yaml       # GCS backup sidecar
-├── erpnext-dev.env           # Dev configuration (edit passwords on server)
-├── erpnext-main.env          # Main configuration
-├── erpnext-dev.yaml            # Generated dev compose (gitignored — contains secrets)
-├── erpnext-main.yaml           # Generated main compose (gitignored)
-├── build-custom-image.sh       # Build dev image + render dev compose
-├── render-compose.sh           # Render compose only (main or after env edits)
-├── fetch-custom-app.sh         # Clone/update custom apps into custom-apps/ (multi-app)
-├── github.env.example          # Template for GITHUB_TOKEN (copy to github.env on server)
-├── resolve-env.sh              # Shared env file resolution
-├── docker_commands.md          # Quick command reference
-└── README.md                   # Index of scripts and env files
+├── PIPELINE.md               # High-level develop → prod flow
+├── guides/                   # Step-by-step recipes
+├── PHASE0_BASELINE.md        # One-time prod → git baseline
+├── README.md                 # Index of active scripts
+├── reference/                # Assets, custom fields, workspaces, compose snippets
+├── deprecated/               # Old live-DB sync — do not use
+├── versions.env / structure.yaml
+├── erpnext-dev.env / erpnext-main.env
+├── compose.*.yaml            # TLS, backup, materialize overlays
+├── build-custom-image.sh / deploy-stack.sh / …
+├── certs/                    # TLS (gitignored secrets)
+├── custom-apps/              # Build-time checkouts
+└── github.env.example
 ```
 
 ## Prerequisites
@@ -193,7 +194,7 @@ Options:
 ./nando-deployment/deploy-stack.sh nando-deployment/erpnext-dev.env --skip-build   # deprecated alias for deploy-only
 ```
 
-You do **not** need `setup-assets.sh` after a normal deploy. Use it only if Desk assets are still broken ([README_assets.md](nando-deployment/README_assets.md)).
+You do **not** need `setup-assets.sh` after a normal deploy. Use it only if Desk assets are still broken ([reference/README_assets.md](nando-deployment/reference/README_assets.md)).
 
 ### 1. Configure env
 
@@ -311,7 +312,7 @@ curl -k https://apps.internal.nandoai.com:3000
 
 ## Operating both stacks
 
-See [`nando-deployment/docker_commands.md`](nando-deployment/docker_commands.md).
+See [`nando-deployment/reference/docker_commands.md`](nando-deployment/reference/docker_commands.md).
 
 | Action | Dev | Main |
 |--------|-----|------|
@@ -365,15 +366,17 @@ App code must live in the **image** (`apps.json` at build time), not only inside
 
 ## Desk customizations
 
-Both sites are edited in the UI. Sync live-to-live; git is history. Guide: [`nando-deployment/README_migrate_customizations.md`](nando-deployment/README_migrate_customizations.md).
+Git fixtures are the source of truth. Structure moves up (local → git → cloud-dev → prod); data moves down from prod. Full guide: [`nando-deployment/PIPELINE.md`](nando-deployment/PIPELINE.md).
 
 ```bash
-./nando-deployment/sync-fixtures-dev-to-main.sh
-./nando-deployment/sync-fixtures-dev-to-main.sh --apply
-./nando-deployment/sync-fixtures-main-to-dev.sh --apply --commit
+nando-erp export --target local && nando-erp lint   # after Desk edits
+nando-erp build --stack dev && nando-erp deploy dev
+nando-erp promote --yes
 ```
 
-Do not `git pull` in containers. Do not use `deploy-stack` migrate to copy Desk fixtures. Transactional data is not fixtures.
+Old live site-to-site sync lives under [`nando-deployment/deprecated/`](nando-deployment/deprecated/) — do not use for normal work.
+
+Do not `git pull` in containers. Transactional data is not fixtures.
 
 ## Backups
 
@@ -381,10 +384,20 @@ Backup sidecar uses `APP_NAME` and `ERPNEXT_VERSION` for GCS paths:
 
 `gs://<GCS_BUCKET>/<APP_NAME>/<ERPNEXT_VERSION>/<timestamp>/`
 
-- Dev: `APP_NAME=nando-erp-dev`
-- Main: `APP_NAME=nando-erp-main`
+- Dev: `APP_NAME=nando-erp-dev` — weekly (`BACKUP_INTERVAL_SECONDS=604800`)
+- Main: `APP_NAME=nando-erp-main` — **daily** (`BACKUP_INTERVAL_SECONDS=86400`, `BACKUP_KEEP=14`)
 
 Optional override: set `GCS_PREFIX` in the env file (see [`compose.backup.yaml`](nando-deployment/compose.backup.yaml)).
+
+Frappe also writes to `sites/<site>/private/backups/` on the named `sites` volume. Those local files are pruned after `keep_backups_for_hours` (default 24). **GCS is the durable store** — do not rely on in-volume backups across long windows. Redeploy does **not** wipe the volume; only `docker compose down -v` does.
+
+CLI:
+
+```bash
+nando-erp backup --stack main                 # + upload to GCS
+nando-erp backup --stack main --prefix nando-erp-main/pre-deploy/<tag>
+nando-erp promote --yes                       # mandatory pre-deploy backup first
+```
 
 Manual backup:
 
@@ -602,7 +615,7 @@ docker compose --project-name erpnext -f nando-deployment/erpnext-dev.yaml exec 
 
 Disable with `BUILD_ASSETS_IN_IMAGE=no` and use `./nando-deployment/setup-assets.sh` (or `--full`) after deploy instead.
 
-Details: [`nando-deployment/README_assets.md`](nando-deployment/README_assets.md).
+Details: [`nando-deployment/reference/README_assets.md`](nando-deployment/reference/README_assets.md).
 
 Each `compose up` runs `materialize-assets.sh` in **configurator** (usually under a minute). If `configurator` stays **Waiting** for many minutes, it is often copying a large HRMS `public/` tree — check `docker compose logs configurator`. To skip on deploy, set `MATERIALIZE_ASSETS_ON_START=0` in your env file, re-render compose, `up -d`, then run `setup-assets.sh`. Run `setup-assets.sh` when bundles are missing or after app updates.
 

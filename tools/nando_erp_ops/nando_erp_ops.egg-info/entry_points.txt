@@ -1,0 +1,2 @@
+[console_scripts]
+nando-erp = nando_erp_ops.cli:main

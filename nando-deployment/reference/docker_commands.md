@@ -22,7 +22,7 @@ docker compose --project-name erpnext-main -f nando-deployment/erpnext-main.yaml
   bench --site apps.internal.nandoai.com migrate
 ```
 
-See [DEPLOYMENT.md](../DEPLOYMENT.md) for full build/redeploy steps.
+See [DEPLOYMENT.md](../../DEPLOYMENT.md) for full build/redeploy steps. Pipeline: [PIPELINE.md](../PIPELINE.md).
 
 ## Build and deploy
 

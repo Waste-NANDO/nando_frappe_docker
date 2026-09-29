@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
 # Resolve deployment env file: explicit arg > erpnext-dev.env
+
+# Overlay shared pins from versions.env without clobbering stack-specific values
+# already set in the caller's environment (e.g. after sourcing erpnext-dev.env).
+source_versions_env() {
+  local script_dir="$1"
+  local versions="${script_dir}/versions.env"
+  if [[ ! -f "${versions}" ]]; then
+    return 0
+  fi
+  local key value
+  while IFS='=' read -r key value || [[ -n "${key}" ]]; do
+    [[ -z "${key}" || "${key}" =~ ^[[:space:]]*# ]] && continue
+    key="$(echo "${key}" | xargs)"
+    value="$(echo "${value}" | xargs)"
+    if [[ -z "${!key+x}" ]]; then
+      export "${key}=${value}"
+    fi
+  done < "${versions}"
+}
+
 resolve_env_file() {
   local script_dir="$1"
   local explicit="${2:-}"

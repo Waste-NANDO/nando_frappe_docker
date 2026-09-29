@@ -1,7 +1,7 @@
 # Workspaces (Frappe v16) — lessons learned
 
 Short reference for the **dev** stack (`erpnext`, site `apps.internal.nandoai.com`, port `:3003`).  
-Full deployment context: [DEPLOYMENT.md](../DEPLOYMENT.md).
+Full deployment context: [DEPLOYMENT.md](../../DEPLOYMENT.md). Pipeline: [PIPELINE.md](../PIPELINE.md).
 
 ## Public vs private
 
@@ -129,8 +129,8 @@ With **developer_mode** on, saving a **public** workspace with a **module** set 
 
 ## Related fixes (same dev session)
 
-- **Server Script** code editor 404: Ace lives under `sites/assets/frappe/node_modules/ace-builds/`. [`materialize-assets.sh`](materialize-assets.sh) copies it after each materialize (frontend nginx does not see `apps/` in the backend container layer).
-- Asset rebuild: [`setup-assets.sh`](setup-assets.sh) or [`README_assets.md`](README_assets.md).
+- Server Script code editor 404: Ace lives under `sites/assets/frappe/node_modules/ace-builds/`. [`../materialize-assets.sh`](../materialize-assets.sh) copies it after each materialize (frontend nginx does not see `apps/` in the backend container layer).
+- Asset rebuild: [`../setup-assets.sh`](../setup-assets.sh) or [`README_assets.md`](README_assets.md).
 
 ## Desktop Icons (v16)
 

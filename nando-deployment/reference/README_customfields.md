@@ -15,7 +15,7 @@ Two causes:
 | **DB duplicate** | Two `Custom Field` rows with the same `dt` + `fieldname`. |
 | **Fixture collision** | `custom_field.json` tries to insert a field that already exists in DB or as a standard field. |
 
-Prevention: scope exports with `{"dt": "Custom Field", "filters": [["module", "=", "NANDO_CRM"]]}` in `hooks.py` and use `export-fixtures --app nando_crm` only. See [README_migrate_customizations.md](README_migrate_customizations.md).
+Prevention: scope exports with `{"dt": "Custom Field", "filters": [["module", "=", "NANDO_CRM"]]}` in `hooks.py` and use `export-fixtures --app nando_crm` only. See [PIPELINE.md](../PIPELINE.md).
 
 ---
 
@@ -204,11 +204,11 @@ From repo root on the server:
 
 ```bash
 # List conflicts
-./nando-deployment/custom-field-cleanup.sh erpnext-dev.env check
+./nando-deployment/deprecated/custom-field-cleanup.sh erpnext-dev.env check
 
 # Delete DB conflicts, then migrate
-./nando-deployment/custom-field-cleanup.sh erpnext-dev.env delete
-./nando-deployment/custom-field-cleanup.sh erpnext-dev.env migrate
+./nando-deployment/deprecated/custom-field-cleanup.sh erpnext-dev.env delete
+./nando-deployment/deprecated/custom-field-cleanup.sh erpnext-dev.env migrate
 ```
 
 Use `erpnext-main.env` and `--project-name erpnext-main` is handled inside the script for the main stack.

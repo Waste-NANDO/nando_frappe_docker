@@ -14,9 +14,11 @@ This fork includes a production-style **dual-stack** setup under [`nando-deploym
 | Dev (custom app, test data) | `https://apps.internal.nandoai.com:3003` | [`erpnext-dev.env`](nando-deployment/erpnext-dev.env) |
 | Main (ERPNext + HRMS) | `https://apps.internal.nandoai.com:3000` | [`erpnext-main.env`](nando-deployment/erpnext-main.env) |
 
-Full guide: **[DEPLOYMENT.md](DEPLOYMENT.md)**. Desk sync: [`nando-deployment/README_migrate_customizations.md`](nando-deployment/README_migrate_customizations.md).
+**Pipeline (structure up / data down):** **[nando-deployment/PIPELINE.md](nando-deployment/PIPELINE.md)** — overview + step-by-step guides.
 
-Quick scripts:
+Infrastructure: **[DEPLOYMENT.md](DEPLOYMENT.md)**. CLI: [`tools/nando_erp_ops`](tools/nando_erp_ops).
+
+Quick scripts (or use `nando-erp build` / `nando-erp deploy` / `nando-erp promote`):
 
 ```bash
 ./nando-deployment/build-custom-image.sh nando-deployment/erpnext-dev.env   # build image

@@ -1,0 +1,31 @@
+name: nando-erp-ops
+
+on:
+  pull_request:
+    paths:
+      - "tools/nando_erp_ops/**"
+      - "nando-deployment/structure.yaml"
+      - "nando-deployment/versions.env"
+  push:
+    branches: [main, master, develop]
+    paths:
+      - "tools/nando_erp_ops/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install and test
+        working-directory: tools/nando_erp_ops
+        run: |
+          pip install -e ".[dev]"
+          pytest -q
+      - name: CLI smoke
+        working-directory: tools/nando_erp_ops
+        run: |
+          nando-erp --help
+          NANDO_DOCKER_REPO="$GITHUB_WORKSPACE" nando-erp doctor --no-local || true

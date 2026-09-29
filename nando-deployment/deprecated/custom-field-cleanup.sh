@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# DEPRECATED — see deprecated/README.md.
 # Check or remove Custom Fields that collide with standard DocType fieldnames.
 #
 # Usage:
@@ -8,10 +9,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=resolve-env.sh
-source "${SCRIPT_DIR}/resolve-env.sh"
+DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=../resolve-env.sh
+source "${DEPLOY_DIR}/resolve-env.sh"
 
-ENV_FILE="$(resolve_env_file "${SCRIPT_DIR}" "${1:-}")"
+ENV_FILE="$(resolve_env_file "${DEPLOY_DIR}" "${1:-}")"
 ACTION="${2:-check}"
 
 set -a
@@ -19,9 +21,9 @@ set -a
 source "${ENV_FILE}"
 set +a
 
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${DEPLOY_DIR}/.." && pwd)"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-erpnext}"
-COMPOSE_FILE_OUTPUT="${COMPOSE_FILE_OUTPUT:-${SCRIPT_DIR}/erpnext-dev.yaml}"
+COMPOSE_FILE_OUTPUT="${COMPOSE_FILE_OUTPUT:-${DEPLOY_DIR}/erpnext-dev.yaml}"
 if [[ "${COMPOSE_FILE_OUTPUT}" != /* ]]; then
   COMPOSE_FILE_OUTPUT="${REPO_ROOT}/${COMPOSE_FILE_OUTPUT}"
 fi

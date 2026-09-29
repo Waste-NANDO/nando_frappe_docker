@@ -45,3 +45,4 @@ venv
 
 # NodeJS
 node_modules
+tools/nando_erp_ops/.venv/

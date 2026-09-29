@@ -1,0 +1,61 @@
+# Structure allowlist — anything listed here moves UP via git fixtures.
+# Anything else is DATA (moves DOWN from prod) or per-environment (never synced).
+#
+# Each app owns exactly one module. Every fixture document must have its
+# `module` field set to that app's module (Custom Field / Property Setter included).
+
+apps:
+  nando_crm:
+    module: NANDO_CRM
+    repo_env: NANDO_CRM_REPO
+    branch_env: NANDO_CRM_BRANCH
+  nando_fulfillment:
+    module: NANDO_Operations
+    repo_env: NANDO_FULFILLMENT_REPO
+    branch_env: NANDO_FULFILLMENT_BRANCH
+
+# DocTypes exported as fixtures (filtered by module unless noted).
+structure_doctypes:
+  - DocType
+  - Custom Field
+  - Property Setter
+  - Client Script
+  - Server Script
+  - Workspace
+  - Workspace Sidebar
+  - Desktop Icon   # no module field — filter by name like NANDO%
+  - Report
+  - Print Format
+  - Notification
+  - Dashboard Chart
+  - Number Card
+  - Role           # no module field — filter by name (NANDO% / explicit list)
+  - Custom DocPerm
+  - Workflow
+
+# Never sync between environments (secrets / site-specific).
+per_environment:
+  - Email Account
+  - Google Settings
+  - System Settings
+  - Connected App
+  - Social Login Key
+  - Integration Request
+
+# Data DocTypes (prod → cloud-dev → local). Explicit for documentation / refresh filter.
+data_doctypes:
+  - Customer
+  - Item
+  - Business Unit
+  - Configuration Template
+  - Configuration Requirement Rule
+  - Sales Order
+  - Service Configuration
+  - Service Order
+  - Delivery Note
+  - Stock Entry
+  - Work Order
+  - Material Request
+  - Pick List
+  - Project
+  - Task

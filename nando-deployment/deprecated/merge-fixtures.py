@@ -1,187 +1,58 @@
 #!/usr/bin/env python3
-"""Merge Frappe fixture JSON: add missing docs, keep dest on conflicts."""
+"""Backward-compatible CLI wrapper around nando_erp_ops.fixtures.merge. """
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
-from typing import Any
 
-IGNORE_KEYS = {"modified", "modified_by", "creation", "owner", "migration_hash"}
-
-
-def load_docs(path: Path) -> list[dict[str, Any]]:
-    if not path.is_file():
-        return []
-    data = json.loads(path.read_text())
-    if isinstance(data, dict):
-        return [data]
-    if isinstance(data, list):
-        return [d for d in data if isinstance(d, dict)]
-    return []
-
-
-def doc_name(doc: dict[str, Any]) -> str:
-    return str(doc.get("name") or "")
-
-
-def comparable(doc: dict[str, Any]) -> Any:
-    def strip(value: Any) -> Any:
-        if isinstance(value, dict):
-            return {
-                k: strip(v)
-                for k, v in sorted(value.items())
-                if k not in IGNORE_KEYS
-            }
-        if isinstance(value, list):
-            return [strip(v) for v in value]
-        return value
-
-    return strip(doc)
-
-
-def write_docs(path: Path, docs: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    docs = sorted(docs, key=lambda d: (doc_name(d), json.dumps(d, sort_keys=True)))
-    path.write_text(json.dumps(docs, indent=1, ensure_ascii=False) + "\n")
-
-
-def merge_file(
-    source_docs: list[dict[str, Any]],
-    dest_docs: list[dict[str, Any]],
-    force_update: bool,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, list[str]]]:
-    dest_by_name = {doc_name(d): d for d in dest_docs if doc_name(d)}
-    source_by_name = {doc_name(d): d for d in source_docs if doc_name(d)}
-
-    added: list[str] = []
-    changed: list[str] = []
-    unchanged: list[str] = []
-    merged: list[dict[str, Any]] = []
-    missing_only: list[dict[str, Any]] = []
-    changed_only: list[dict[str, Any]] = []
-
-    for name, dest_doc in dest_by_name.items():
-        src = source_by_name.get(name)
-        if src is None:
-            merged.append(dest_doc)
-            continue
-        if comparable(src) == comparable(dest_doc):
-            unchanged.append(name)
-            merged.append(dest_doc)
-            continue
-        changed.append(name)
-        changed_only.append(src)
-        merged.append(src if force_update else dest_doc)
-
-    for name, src in source_by_name.items():
-        if name in dest_by_name:
-            continue
-        added.append(name)
-        merged.append(src)
-        missing_only.append(src)
-
-    report = {"added": added, "changed": changed, "unchanged": unchanged}
-    return merged, missing_only, changed_only, report
-
-
-def iter_json_files(root: Path) -> list[Path]:
-    if not root.is_dir():
-        return []
-    return sorted(p for p in root.rglob("*.json") if p.is_file())
-
-
-def rel(path: Path, root: Path) -> Path:
-    return path.relative_to(root)
+# Prefer installed package; fall back to tools path
+try:
+    from nando_erp_ops.fixtures import load_docs, merge_file, write_docs
+except ImportError:
+    # deprecated/ → repo root is parents[2]
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools" / "nando_erp_ops"))
+    from nando_erp_ops.fixtures import load_docs, merge_file, write_docs
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", required=True, type=Path)
-    parser.add_argument("--dest", required=True, type=Path)
-    parser.add_argument("--merged-out", required=True, type=Path)
-    parser.add_argument("--missing-out", required=True, type=Path)
-    parser.add_argument("--changed-out", type=Path, default=None)
-    parser.add_argument("--force-update", action="store_true")
-    parser.add_argument(
-        "--only",
-        action="append",
-        default=[],
-        metavar="NAME",
-        help="Limit to these document names (repeatable)",
-    )
-    parser.add_argument(
-        "--file",
-        action="append",
-        default=[],
-        dest="file_names",
-        metavar="JSON",
-        help="Limit to these fixture filenames, e.g. doctype.json (repeatable)",
-    )
-    args = parser.parse_args()
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--source", required=True, type=Path)
+    p.add_argument("--dest", required=True, type=Path)
+    p.add_argument("--merged-out", required=True, type=Path)
+    p.add_argument("--missing-out", required=True, type=Path)
+    p.add_argument("--changed-out", required=True, type=Path)
+    p.add_argument("--force-update", action="store_true")
+    p.add_argument("--only", action="append", default=[])
+    p.add_argument("--file", dest="files", action="append", default=[])
+    args = p.parse_args()
 
-    source_root = args.source.resolve()
-    dest_root = args.dest.resolve()
-    merged_root = args.merged_out.resolve()
-    missing_root = args.missing_out.resolve()
-    changed_root = args.changed_out.resolve() if args.changed_out else None
+    src_files = {f.name: f for f in args.source.glob("*.json")}
+    dst_files = {f.name: f for f in args.dest.glob("*.json")}
+    names = sorted(set(src_files) | set(dst_files))
+    if args.files:
+        names = [n for n in names if n in set(args.files)]
 
-    files = {rel(p, source_root) for p in iter_json_files(source_root)}
-    files |= {rel(p, dest_root) for p in iter_json_files(dest_root)}
-    if args.file_names:
-        want = set(args.file_names)
-        files = {p for p in files if p.name in want}
+    total_missing = total_changed = total_unchanged = 0
+    for fname in names:
+        src = load_docs(src_files[fname]) if fname in src_files else []
+        dst = load_docs(dst_files[fname]) if fname in dst_files else []
+        if args.only:
+            only = set(args.only)
+            src = [d for d in src if d.get("name") in only]
+            dst = [d for d in dst if d.get("name") in only]
+        merged, missing, changed, report = merge_file(src, dst, args.force_update)
+        write_docs(args.merged_out / fname, merged)
+        write_docs(args.missing_out / fname, missing)
+        write_docs(args.changed_out / fname, changed)
+        total_missing += len(report["added"])
+        total_changed += len(report["changed"])
+        total_unchanged += len(report["unchanged"])
+        print(f"{fname}: +{len(report['added'])} ~{len(report['changed'])} ={len(report['unchanged'])}")
 
-    only = set(args.only)
-
-    grand: dict[str, list[str]] = {"added": [], "changed": [], "unchanged": []}
-    any_work = False
-
-    for rel_path in sorted(files, key=str):
-        source_docs = load_docs(source_root / rel_path)
-        dest_docs = load_docs(dest_root / rel_path)
-        if only:
-            source_docs = [d for d in source_docs if doc_name(d) in only]
-            dest_docs = [d for d in dest_docs if doc_name(d) in only]
-        merged, missing, changed_docs, report = merge_file(
-            source_docs,
-            dest_docs,
-            args.force_update,
-        )
-        write_docs(merged_root / rel_path, merged)
-        if missing:
-            write_docs(missing_root / rel_path, missing)
-        if changed_root is not None and changed_docs:
-            write_docs(changed_root / rel_path, changed_docs)
-        for key in grand:
-            for name in report[key]:
-                grand[key].append(f"{rel_path}::{name}")
-                any_work = True
-
-        if report["added"] or report["changed"]:
-            print(f"[{rel_path}]")
-            if report["added"]:
-                print("  missing on dest (will add):")
-                for name in report["added"]:
-                    print(f"    + {name}")
-            if report["changed"]:
-                verb = "overwritten from source" if args.force_update else "kept dest (skip)"
-                print(f"  same name, different content ({verb}):")
-                for name in report["changed"]:
-                    print(f"    ~ {name}")
-
-    print("")
-    print(
-        f"Summary: {len(grand['added'])} missing, "
-        f"{len(grand['changed'])} conflicting, "
-        f"{len(grand['unchanged'])} identical"
-    )
-    if not any_work and not files:
-        print("No fixture JSON found on either side.")
-        return 1
+    print(f"TOTAL missing={total_missing} changed={total_changed} identical={total_unchanged}")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

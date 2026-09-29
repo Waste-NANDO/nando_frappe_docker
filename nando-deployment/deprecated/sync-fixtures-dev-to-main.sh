@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# DEPRECATED — see deprecated/README.md. Prefer nando-erp capture / deploy / promote.
 # Sync missing Desk fixtures from live dev (:3003) onto live main (:3000).
 # Git history: add --commit (records dest snapshot on app main/master).
 set -euo pipefail

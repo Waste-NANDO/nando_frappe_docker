@@ -131,7 +131,7 @@ Refused to apply style from '.../website.bundle.NQ53BIH4.css' because its MIME t
 ./nando-deployment/setup-assets.sh nando-deployment/erpnext-main.env
 ```
 
-`deploy-stack.sh` and `setup-assets.sh` force-materialize app `dist/` trees, copy `.baked-assets/` manifests, then run [`rewrite-assets-manifest.py`](rewrite-assets-manifest.py) so `assets.json` hashes match the files on the volume. **Do not** run `bench build` on backend — that image has no `node`, and a failed build can replace copied files with broken symlinks. `deploy-stack.sh` verifies that every hashed bundle referenced by `assets.json` exists on the frontend volume.
+`deploy-stack.sh` and `setup-assets.sh` force-materialize app `dist/` trees, copy `.baked-assets/` manifests, then run [`../rewrite-assets-manifest.py`](../rewrite-assets-manifest.py) so `assets.json` hashes match the files on the volume. **Do not** run `bench build` on backend — that image has no `node`, and a failed build can replace copied files with broken symlinks. `deploy-stack.sh` verifies that every hashed bundle referenced by `assets.json` exists on the frontend volume.
 
 If that still fails, rebuild the image once (so `.baked-assets/` exists), then redeploy:
 
@@ -161,8 +161,8 @@ Symlinks under `sites/assets` → `apps/` break across containers when **`bench 
 | Script | Purpose |
 |--------|---------|
 | [`deploy-stack.sh`](deploy-stack.sh) | Deploy running stack (default: no image rebuild) |
-| [`setup-assets.sh`](setup-assets.sh) | Re-sync volume; `--full` = runtime bench build |
-| [`materialize-assets.sh`](materialize-assets.sh) | Copy `apps/*/public` → `sites/assets/`, then rewrite manifest hashes |
-| [`rewrite-assets-manifest.py`](rewrite-assets-manifest.py) | Point `assets.json` at hashed files on the volume (no Node) |
+| [`setup-assets.sh`](../setup-assets.sh) | Re-sync volume; `--full` = runtime bench build |
+| [`materialize-assets.sh`](../materialize-assets.sh) | Copy `apps/*/public` → `sites/assets/`, then rewrite manifest hashes |
+| [`rewrite-assets-manifest.py`](../rewrite-assets-manifest.py) | Point `assets.json` at hashed files on the volume (no Node) |
 
-Related: [README_workspaces.md](README_workspaces.md), [DEPLOYMENT.md](../DEPLOYMENT.md)
+Related: [README_workspaces.md](README_workspaces.md), [DEPLOYMENT.md](../../DEPLOYMENT.md)

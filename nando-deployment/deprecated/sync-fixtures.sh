@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# DEPRECATED — live Desk sync between stacks.
+# Prefer: nando-erp export / nando-erp capture / git / nando-erp deploy / nando-erp promote
+# See ../PIPELINE.md and README.md in this folder.
+#
 # Compare fixture JSON between stacks. Default is report-only.
 # Adds missing docs; does not overwrite conflicts unless --force-update.
 #
@@ -8,9 +12,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-# shellcheck source=resolve-env.sh
-source "${SCRIPT_DIR}/resolve-env.sh"
+DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${DEPLOY_DIR}/.." && pwd)"
+# shellcheck source=../resolve-env.sh
+source "${DEPLOY_DIR}/resolve-env.sh"
 
 FROM=""
 TO=""
@@ -101,8 +106,8 @@ fi
 
 stack_env() {
   case "$1" in
-    dev) echo "${SCRIPT_DIR}/erpnext-dev.env" ;;
-    main) echo "${SCRIPT_DIR}/erpnext-main.env" ;;
+    dev) echo "${DEPLOY_DIR}/erpnext-dev.env" ;;
+    main) echo "${DEPLOY_DIR}/erpnext-main.env" ;;
   esac
 }
 
@@ -165,7 +170,7 @@ container_fixtures() {
 
 host_git_fixtures() {
   local app="$1"
-  local root="${SCRIPT_DIR}/custom-apps/${app}"
+  local root="${DEPLOY_DIR}/custom-apps/${app}"
   if [[ -d "${root}/${app}/fixtures" ]]; then
     echo "${root}/${app}/fixtures"
   elif [[ -d "${root}/fixtures" ]]; then
@@ -244,7 +249,7 @@ commit_dest_snapshot() {
   git_fx="$(host_git_fixtures "${app}")"
   mkdir -p "${git_fx}"
   rsync -rl --exclude '.gitkeep' "${snapshot_dir}/" "${git_fx}/"
-  repo="${SCRIPT_DIR}/custom-apps/${app}"
+  repo="${DEPLOY_DIR}/custom-apps/${app}"
   git -C "${repo}" add -- "${git_fx#"${repo}/"}" || git -C "${repo}" add -A
   if git -C "${repo}" diff --cached --quiet; then
     echo "[git] ${app}: no fixture changes to commit"
@@ -287,7 +292,7 @@ done
 
 if [[ "${DO_COMMIT}" -eq 1 ]]; then
   echo "[git] fetch main/master checkouts for history commits"
-  "${SCRIPT_DIR}/fetch-custom-app.sh" "$(stack_env main)"
+  "${DEPLOY_DIR}/fetch-custom-app.sh" "$(stack_env main)"
 fi
 
 DEST_BACKED_UP=0

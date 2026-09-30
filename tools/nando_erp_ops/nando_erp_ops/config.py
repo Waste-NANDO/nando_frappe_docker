@@ -5,6 +5,16 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+STACK_ALIASES = {"prod": "main"}
+STACKS = ("dev", "quality", "main")
+
+
+def normalize_stack(name: str) -> str:
+    name = STACK_ALIASES.get(name, name)
+    if name not in STACKS:
+        raise ValueError(f"Unknown stack: {name} (want one of {', '.join(STACKS)} or prod)")
+    return name
+
 
 def find_repo_root(start: Path | None = None) -> Path:
     """Locate nando_frappe_docker repo root (contains compose.yaml + nando-deployment/)."""
@@ -49,12 +59,13 @@ class Paths:
     def custom_apps(self) -> Path:
         return self.deployment / "custom-apps"
 
+    @property
+    def monorepo_cache(self) -> Path:
+        return self.deployment / ".apps-monorepo"
+
     def env_file(self, stack: str) -> Path:
-        if stack == "dev":
-            return self.deployment / "erpnext-dev.env"
-        if stack in {"main", "prod"}:
-            return self.deployment / "erpnext-main.env"
-        raise ValueError(f"Unknown stack: {stack}")
+        stack = normalize_stack(stack)
+        return self.deployment / f"erpnext-{stack}.env"
 
 
 def get_paths() -> Paths:
@@ -68,6 +79,20 @@ def local_bench_root() -> Path | None:
     # Common layout: sibling ERP_test/nando-bench
     repo = find_repo_root()
     sibling = repo.parent / "ERP_test" / "nando-bench"
+    if sibling.is_dir():
+        return sibling
+    return None
+
+
+def apps_monorepo_root() -> Path | None:
+    """Local checkout of nando-erp-modules (for editable bench + capture)."""
+    env = os.environ.get("NANDO_APPS_CHECKOUT")
+    if env:
+        p = Path(env).resolve()
+        if p.is_dir():
+            return p
+    repo = find_repo_root()
+    sibling = repo.parent / "nando-erp-modules"
     if sibling.is_dir():
         return sibling
     return None

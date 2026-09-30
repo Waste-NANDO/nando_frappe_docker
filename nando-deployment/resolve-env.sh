@@ -91,6 +91,12 @@ get_custom_app_repo() {
   prefix="$(custom_app_env_prefix "${prefix}")"
   local repo_var="${prefix}_REPO"
 
+  # Shared monorepo (nando-erp-modules) takes precedence when set.
+  if [[ -n "${NANDO_APPS_REPO:-}" ]]; then
+    echo "${NANDO_APPS_REPO}"
+    return 0
+  fi
+
   if [[ -n "${!repo_var:-}" ]]; then
     echo "${!repo_var}"
     return 0
@@ -105,12 +111,50 @@ get_custom_app_branch() {
   prefix="$(custom_app_env_prefix "${prefix}")"
   local branch_var="${prefix}_BRANCH"
 
+  # Shared monorepo branch takes precedence when set.
+  if [[ -n "${NANDO_APPS_BRANCH:-}" ]]; then
+    echo "${NANDO_APPS_BRANCH}"
+    return 0
+  fi
+
   if [[ -n "${!branch_var:-}" ]]; then
     echo "${!branch_var}"
     return 0
   fi
 
   echo ""
+}
+
+# Path of the app folder inside NANDO_APPS_REPO (defaults to the app key).
+get_custom_app_path() {
+  local key="$1"
+  local prefix="${key//-/_}"
+  prefix="$(custom_app_env_prefix "${prefix}")"
+  local path_var="${prefix}_PATH"
+
+  if [[ -n "${!path_var:-}" ]]; then
+    echo "${!path_var}"
+    return 0
+  fi
+
+  # Fall back to structure.yaml path: under apps.<key> (default = key).
+  local structure_yaml="${SCRIPT_DIR}/structure.yaml"
+  if [[ -f "${structure_yaml}" ]]; then
+    local from_yaml
+    from_yaml="$(
+      awk -v key="${key}" '
+        $0 ~ "^  " key ":" { inapp=1; next }
+        inapp && $1 == "path:" { print $2; exit }
+        inapp && /^  [a-z_]/:/ { exit }
+      ' "${structure_yaml}"
+    )"
+    if [[ -n "${from_yaml}" ]]; then
+      echo "${from_yaml}"
+      return 0
+    fi
+  fi
+
+  echo "${key}"
 }
 
 # Space-separated apps to install on site (defaults to CUSTOM_APP_KEYS).

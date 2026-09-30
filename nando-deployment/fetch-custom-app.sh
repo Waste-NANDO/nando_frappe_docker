@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# Fetch custom apps into nando-deployment/custom-apps/.
+#
+# Monorepo mode (preferred): NANDO_APPS_REPO + NANDO_APPS_BRANCH set.
+#   Clones Waste-NANDO/nando-erp-modules once, then materializes each app
+#   folder into custom-apps/<key> as a tiny git repo (required by the
+#   Docker build's file:///opt/frappe/custom-apps/<key> install).
+#
+# Legacy mode: each app has its own <PREFIX>_REPO / <PREFIX>_BRANCH.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,6 +15,7 @@ source "${SCRIPT_DIR}/resolve-env.sh"
 
 ENV_FILE="$(resolve_env_file "${SCRIPT_DIR}" "${1:-}")"
 APPS_ROOT="${SCRIPT_DIR}/custom-apps"
+MONOREPO_CACHE="${SCRIPT_DIR}/.apps-monorepo"
 GITHUB_SECRETS_FILE="${SCRIPT_DIR}/github.env"
 
 set -a
@@ -65,16 +74,89 @@ EOF
   echo "${default_branch}"
 }
 
-mkdir -p "${APPS_ROOT}"
+materialize_app_from_monorepo() {
+  local key="$1"
+  local path_in_repo="$2"
+  local monorepo_sha="$3"
+  local src="${MONOREPO_CACHE}/${path_in_repo}"
+  local target_dir="${APPS_ROOT}/${key}"
 
-fetch_one_app() {
+  if [[ ! -d "${src}" ]]; then
+    echo "Monorepo path missing: ${src} (app key=${key})" >&2
+    return 1
+  fi
+
+  rm -rf "${target_dir}"
+  mkdir -p "${APPS_ROOT}"
+  cp -a "${src}" "${target_dir}"
+
+  # Tiny git repo so bench/get-app from file:// works and SHAs are readable.
+  git -C "${target_dir}" init -q
+  git -C "${target_dir}" config user.email "ci@nando.ai"
+  git -C "${target_dir}" config user.name "nando-erp fetch"
+  git -C "${target_dir}" add -A
+  git -C "${target_dir}" commit -q -m "materialize ${key} from nando-erp-modules@${monorepo_sha}"
+  # Annotate with monorepo SHA for image tags / promote checks.
+  git -C "${target_dir}" notes add -m "monorepo_sha=${monorepo_sha}" 2>/dev/null || true
+  echo "${monorepo_sha}" > "${target_dir}/.nando_monorepo_sha"
+
+  cat <<EOF
+Custom app checkout ready (monorepo):
+  ${key} → ${target_dir}
+  path: ${path_in_repo}
+  monorepo revision: ${monorepo_sha}
+EOF
+}
+
+fetch_monorepo() {
+  local repo="${NANDO_APPS_REPO}"
+  local branch="${NANDO_APPS_BRANCH:-}"
+  local canonical_repo auth_repo resolved_branch
+
+  canonical_repo="$(github_repo_canonical_url "${repo}")"
+  auth_repo="$(github_repo_auth_url "${repo}")"
+  resolved_branch="$(resolve_remote_branch "${auth_repo}" "${branch}" "NANDO_APPS")"
+
+  if [[ -d "${MONOREPO_CACHE}/.git" ]]; then
+    local current_remote
+    current_remote="$(git -C "${MONOREPO_CACHE}" remote get-url origin 2>/dev/null || true)"
+    if ! repos_match "${current_remote}" "${repo}"; then
+      echo "Monorepo cache remote mismatch (${current_remote}); recloning." >&2
+      rm -rf "${MONOREPO_CACHE}"
+    fi
+  fi
+
+  if [[ -d "${MONOREPO_CACHE}/.git" ]]; then
+    git -C "${MONOREPO_CACHE}" remote set-url origin "${canonical_repo}"
+    git_with_github_auth -C "${MONOREPO_CACHE}" fetch --tags --prune "${auth_repo}" \
+      "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
+    git -C "${MONOREPO_CACHE}" checkout -B "${resolved_branch}" "origin/${resolved_branch}"
+  else
+    rm -rf "${MONOREPO_CACHE}"
+    git_with_github_auth clone --branch "${resolved_branch}" "${auth_repo}" "${MONOREPO_CACHE}"
+    git -C "${MONOREPO_CACHE}" remote set-url origin "${canonical_repo}"
+  fi
+
+  git_with_github_auth -C "${MONOREPO_CACHE}" \
+    -c "http.extraHeader=Authorization: Bearer ${GITHUB_TOKEN}" \
+    submodule update --init --recursive 2>/dev/null || true
+
+  git -C "${MONOREPO_CACHE}" config core.sharedRepository group
+
+  local sha
+  sha="$(git -C "${MONOREPO_CACHE}" rev-parse HEAD)"
+  echo "Monorepo ready: ${MONOREPO_CACHE} @ ${sha} (branch ${resolved_branch})"
+  echo "${sha}"
+}
+
+fetch_one_app_legacy() {
   local key="$1"
   local repo branch target_dir current_remote canonical_repo auth_repo env_prefix
 
   if ! repo="$(get_custom_app_repo "${key}")"; then
     local prefix
     prefix="$(custom_app_env_prefix "${key}")"
-    echo "No repo configured for app key '${key}' (set ${prefix}_REPO in ${ENV_FILE})" >&2
+    echo "No repo configured for app key '${key}' (set ${prefix}_REPO or NANDO_APPS_REPO in ${ENV_FILE})" >&2
     return 1
   fi
 
@@ -128,15 +210,16 @@ EOF
     -c "http.extraHeader=Authorization: Bearer ${GITHUB_TOKEN}" \
     submodule update --init --recursive
 
-  # Keep FETCH_HEAD group-writable when several users share the checkout.
   git -C "${target_dir}" config core.sharedRepository group
 
   cat <<EOF
-Custom app checkout ready:
+Custom app checkout ready (legacy):
   ${key} → ${target_dir}
   revision: $(git -C "${target_dir}" rev-parse --short HEAD)
 EOF
 }
+
+mkdir -p "${APPS_ROOT}"
 
 read -r -a app_keys <<< "$(resolve_custom_app_keys)"
 if [[ "${#app_keys[@]}" -eq 0 ]]; then
@@ -144,11 +227,23 @@ if [[ "${#app_keys[@]}" -eq 0 ]]; then
   exit 1
 fi
 
-for key in "${app_keys[@]}"; do
-  key="$(echo "${key}" | xargs)"
-  [[ -z "${key}" ]] && continue
-  fetch_one_app "${key}"
-done
+if [[ -n "${NANDO_APPS_REPO:-}" ]]; then
+  MONOREPO_SHA="$(fetch_monorepo)"
+  for key in "${app_keys[@]}"; do
+    key="$(echo "${key}" | xargs)"
+    [[ -z "${key}" ]] && continue
+    path_in_repo="$(get_custom_app_path "${key}")"
+    materialize_app_from_monorepo "${key}" "${path_in_repo}" "${MONOREPO_SHA}"
+  done
+  # Persist monorepo SHA for cmd_build image tags
+  echo "${MONOREPO_SHA}" > "${APPS_ROOT}/.nando_monorepo_sha"
+else
+  for key in "${app_keys[@]}"; do
+    key="$(echo "${key}" | xargs)"
+    [[ -z "${key}" ]] && continue
+    fetch_one_app_legacy "${key}"
+  done
+fi
 
 cat <<EOF
 

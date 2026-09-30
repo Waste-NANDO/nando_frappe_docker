@@ -28,8 +28,9 @@ fi
 
 case "${TARGET}" in
   dev) ENV_FILE="${SCRIPT_DIR}/erpnext-dev.env" ;;
+  quality) ENV_FILE="${SCRIPT_DIR}/erpnext-quality.env" ;;
   main|prod) ENV_FILE="${SCRIPT_DIR}/erpnext-main.env" ;;
-  *) echo "target must be dev|main" >&2; exit 1 ;;
+  *) echo "target must be dev|quality|main" >&2; exit 1 ;;
 esac
 
 set -a

@@ -1,37 +1,41 @@
 # 05 — Promote to prod
 
-Ship the **exact image** that is running on cloud-dev to prod (`:3000`). No rebuild.
+Ship the **exact image** that is running on **Quality** to prod (`:3000`). No rebuild.
 
 ## Gate (enforced by `nando-erp promote`)
 
-1. Cloud-dev drift check is clean
+1. Quality drift check is clean
 2. You pass `--yes` (explicit approval)
-3. Pre-deploy database backup uploads to GCS under `pre-deploy/<image-tag>/`
-4. Approval is appended to `nando-deployment/logs/promote-audit.jsonl`
+3. Optional `--expect-sha <commit>` — image `apps.<sha>` tree must match that commit
+4. Pre-deploy database backup uploads to GCS under `pre-deploy/<image-tag>/`
+5. Approval is appended to `nando-deployment/logs/promote-audit.jsonl`
 
 ## Steps
 
-### 1. Validate on cloud-dev
+### 1. Validate on Quality
 
-- Feature works on `:3003`
+- Feature works on `:3001`
 - Prefer a recent [data refresh](06-refresh-data.md) so migrate was tested against prod-like data
+- For Desk-side hotfixes, run [10 — Release](10-release-hotfix.md) first so git matches Quality
 
 ### 2. Promote
 
 ```bash
 # On ERP host (or SSM)
-nando-erp promote --yes
-# optional: nando-erp promote --yes --actor "simone" --image-tag nando-erpnext-custom:…
+nando-erp promote --from quality --to main --yes
+# CI / merge to master:
+# nando-erp promote --from quality --to main --expect-sha "$GITHUB_SHA" --yes --actor github-actions
 ```
 
 What it does:
 
-1. `nando-erp drift --stack dev` — abort on drift
-2. Resolve the running cloud-dev backend image
-3. `nando-erp backup --stack main` → GCS `…/pre-deploy/…`
-4. `docker tag` source image → prod image name/tag
-5. `deploy-stack.sh` for `erpnext-main` (migrate + assets)
-6. Write audit log line
+1. `nando-erp drift --stack quality` — abort on drift
+2. Resolve the running Quality backend image
+3. Optionally verify `--expect-sha` against the image tag
+4. `nando-erp backup --stack main` → GCS `…/pre-deploy/…`
+5. `docker tag` source image → prod image name/tag
+6. `deploy-stack.sh` for `erpnext-main` (migrate + assets)
+7. Write audit log line
 
 ### 3. Smoke-check prod
 
@@ -41,10 +45,11 @@ What it does:
 
 ## What not to do
 
-- Do not rebuild a separate image for prod from `main`/`master` for the same change — that breaks “build once, promote”.
+- Do not rebuild a separate image for prod from `master` for the same change — that breaks “build once, promote”.
 - Do not edit structure in the prod Desk UI.
 - Do not skip the pre-deploy backup.
+- Do not promote from cloud-dev for production releases once Quality is live (use Quality).
 
 ## After promote
 
-Merge `dev` → `main`/`master` on the app repos when you want git history on the release branches to match what shipped (image already contains the SHAs from the build).
+Merge `quality` → `dev` (back-merge) so the next cloud-dev promotion does not lose the hotfix. The `release` command opens that PR automatically.

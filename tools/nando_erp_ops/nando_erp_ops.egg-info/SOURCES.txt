@@ -20,3 +20,4 @@ nando_erp_ops/executor/__init__.py
 nando_erp_ops/fixtures/__init__.py
 nando_erp_ops/fixtures/lint.py
 tests/test_fixtures.py
+tests/test_stack.py

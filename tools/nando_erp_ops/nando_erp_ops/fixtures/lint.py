@@ -120,3 +120,35 @@ def lint_all(app_fixture_dirs: dict[str, Path], structure: StructureConfig | Non
         if len(set(apps)) > 1:
             errors.append(f"{fname}:{name}: exported by multiple apps {sorted(set(apps))}")
     return errors
+
+
+def _hooks_fixture_dts(hooks_path: Path) -> set[str]:
+    """Parse hooks.py fixtures list for dt names (best-effort, no exec)."""
+    text = hooks_path.read_text()
+    dts: set[str] = set()
+    # Match {"dt": "Custom Field", ...} or "dt": 'DocType'
+    import re
+
+    for m in re.finditer(r'["\']dt["\']\s*:\s*["\']([^"\']+)["\']', text):
+        dts.add(m.group(1))
+    return dts
+
+
+def lint_hooks_coverage(
+    app: str,
+    hooks_path: Path,
+    structure: StructureConfig | None = None,
+) -> list[str]:
+    """Each structure_doctype must appear in the app's hooks.py fixtures list."""
+    structure = structure or load_structure()
+    if app not in structure.apps:
+        return [f"Unknown app '{app}'"]
+    if not hooks_path.is_file():
+        return [f"{app}: missing hooks.py at {hooks_path}"]
+    dts = _hooks_fixture_dts(hooks_path)
+    missing = [dt for dt in structure.structure_doctypes if dt not in dts]
+    if not missing:
+        return []
+    return [
+        f"{app}/hooks.py: fixtures missing structure_doctypes: {', '.join(missing)}"
+    ]

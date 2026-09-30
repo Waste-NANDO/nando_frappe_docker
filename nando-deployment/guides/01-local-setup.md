@@ -35,7 +35,21 @@ nando-erp local-bootstrap
 nando-erp local-bootstrap --dry-run
 ```
 
-This force-checkouts `frappe`, `erpnext`, and (unless `--skip-hrms`) `hrms` to the pinned tags, and `bench get-app`s missing custom apps from the `dev` branch.
+This force-checkouts `frappe`, `erpnext`, and (unless `--skip-hrms`) `hrms` to the pinned tags. Missing custom apps are symlinked from the local [`nando-erp-modules`](https://github.com/Waste-NANDO/nando-erp-modules) checkout (set `NANDO_APPS_CHECKOUT` if it is not a sibling of `nando_frappe_docker`).
+
+Recommended layout after cutover:
+
+```bash
+# one-time
+export NANDO_APPS_CHECKOUT="$HOME/dev/ReLearn-dev/nando-erp-modules"
+mkdir -p "$NANDO_LOCAL_BENCH/_old_apps"
+# move old per-app clones aside if present, then:
+ln -sfn "$NANDO_APPS_CHECKOUT/nando_crm" "$NANDO_LOCAL_BENCH/apps/nando_crm"
+ln -sfn "$NANDO_APPS_CHECKOUT/nando_fulfillment" "$NANDO_LOCAL_BENCH/apps/nando_fulfillment"
+cd "$NANDO_LOCAL_BENCH"
+bench pip install -e apps/nando_crm
+bench pip install -e apps/nando_fulfillment
+```
 
 Then on the bench:
 

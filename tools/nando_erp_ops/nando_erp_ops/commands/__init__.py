@@ -8,10 +8,16 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from nando_erp_ops.config import get_paths, local_bench_root
+from nando_erp_ops.config import (
+    STACKS,
+    apps_monorepo_root,
+    get_paths,
+    local_bench_root,
+    normalize_stack,
+)
 from nando_erp_ops.executor import get_executor
 from nando_erp_ops.fixtures import diff_dirs, write_docs, load_docs
-from nando_erp_ops.fixtures.lint import lint_all, lint_app_fixtures
+from nando_erp_ops.fixtures.lint import lint_all, lint_app_fixtures, lint_hooks_coverage
 from nando_erp_ops.stack import Stack
 from nando_erp_ops.structure import load_structure
 from nando_erp_ops.versions import REQUIRED_PINS, load_stack_env, load_versions, parse_env_file
@@ -23,7 +29,8 @@ def cmd_doctor(stack: str | None = None, local: bool = True) -> int:
     for key in REQUIRED_PINS:
         print(f"  {key}={versions.get(key, '(missing)')}")
     rc = 0
-    for name in (["dev", "main"] if not stack else [stack if stack != "prod" else "main"]):
+    names = list(STACKS) if not stack else [normalize_stack(stack)]
+    for name in names:
         env = load_stack_env(name)
         print(f"\n=== stack {name} ===")
         for key in REQUIRED_PINS:
@@ -104,13 +111,24 @@ def cmd_local_bootstrap(*, skip_hrms: bool = False, dry_run: bool = False) -> in
             if not r.ok:
                 print(r.stderr or r.stdout)
                 return r.returncode
-    # Ensure custom apps exist as editable checkouts
+    # Ensure custom apps exist as editable checkouts (prefer monorepo symlinks)
     structure = load_structure()
     stack = load_stack_env("dev")
+    mono = apps_monorepo_root()
     for app, spec in structure.apps.items():
         app_dir = bench / "apps" / app
-        if app_dir.is_dir():
+        if app_dir.is_dir() or app_dir.is_symlink():
             print(f"→ {app} present (leave branch as-is for feature work)")
+            continue
+        if mono:
+            src = mono / structure.path_for(app)
+            print(f"→ symlink {app_dir} → {src}")
+            if dry_run:
+                continue
+            if not src.is_dir():
+                print(f"  missing monorepo path {src}")
+                return 1
+            app_dir.symlink_to(src)
             continue
         repo = stack.get(spec.repo_env) or versions.get(spec.repo_env)
         branch = stack.get(spec.branch_env, "dev")
@@ -127,20 +145,36 @@ def cmd_local_bootstrap(*, skip_hrms: bool = False, dry_run: bool = False) -> in
 
 def cmd_lint(app_dirs: dict[str, Path] | None = None) -> int:
     structure = load_structure()
+    paths = get_paths()
+    mono = apps_monorepo_root()
     if app_dirs is None:
         app_dirs = {}
         bench = local_bench_root()
-        paths = get_paths()
         for app in structure.apps:
             candidates = []
             if bench:
                 candidates.append(bench / "apps" / app / app / "fixtures")
+            if mono:
+                candidates.append(mono / structure.path_for(app) / app / "fixtures")
             candidates.append(paths.custom_apps / app / app / "fixtures")
             for c in candidates:
                 if c.is_dir():
                     app_dirs[app] = c
                     break
     errors = lint_all(app_dirs, structure)
+    # hooks.py must cover structure_doctypes
+    for app in structure.apps:
+        hooks_candidates = []
+        if mono:
+            hooks_candidates.append(mono / structure.path_for(app) / app / "hooks.py")
+        bench = local_bench_root()
+        if bench:
+            hooks_candidates.append(bench / "apps" / app / app / "hooks.py")
+        hooks_candidates.append(paths.custom_apps / app / app / "hooks.py")
+        for hp in hooks_candidates:
+            if hp.is_file():
+                errors.extend(lint_hooks_coverage(app, hp, structure))
+                break
     if not errors:
         print("lint OK")
         return 0
@@ -251,53 +285,88 @@ def cmd_drift(*, stack: str = "dev", apps: list[str] | None = None) -> int:
         return 0
 
 
-def cmd_capture(*, stack: str = "dev", push: bool = False) -> int:
-    """Export live stack fixtures into capture/<date> branches and optionally open PRs."""
+def _monorepo_worktree() -> Path | None:
+    """Prefer local nando-erp-modules checkout; else host fetch cache."""
+    mono = apps_monorepo_root()
+    if mono and (mono / ".git").exists():
+        return mono
+    paths = get_paths()
+    if (paths.monorepo_cache / ".git").exists():
+        return paths.monorepo_cache
+    return None
+
+
+def cmd_capture(*, stack: str = "dev", push: bool = False, base: str | None = None) -> int:
+    """Export live stack fixtures into the monorepo and optionally open one PR."""
     structure = load_structure()
     date = datetime.now(timezone.utc).strftime("%Y%m%d")
-    branch = f"capture/{date}"
-    # First export into custom-apps
+    branch = f"capture/{stack}-{date}"
+    base = base or ("quality" if stack == "quality" else "dev")
     rc = cmd_export(target=stack)
     if rc != 0:
         return rc
     paths = get_paths()
+    mono = _monorepo_worktree()
+    if not mono:
+        print("No monorepo checkout (.apps-monorepo or NANDO_APPS_CHECKOUT). Run fetch-custom-app first.")
+        return 1
     ex = get_executor()
+    # Copy exported fixtures from custom-apps into monorepo app folders
     for app in structure.apps:
-        repo = paths.custom_apps / app
-        if not (repo / ".git").exists():
-            print(f"[{app}] skip capture commit — {repo} is not a git checkout (fetch-custom-app first)")
+        src = paths.custom_apps / app / app / "fixtures"
+        if not src.is_dir():
+            print(f"[{app}] no exported fixtures at {src}")
             continue
-        r = ex.run(["git", "checkout", "-B", branch], cwd=str(repo))
-        if not r.ok:
-            print(r.stderr)
-            return r.returncode
-        ex.run(["git", "add", "-A"], cwd=str(repo))
-        r = ex.run(
-            ["git", "commit", "-m", f"capture: {stack} fixtures {date}"],
-            cwd=str(repo),
+        dest = mono / structure.path_for(app) / app / "fixtures"
+        dest.mkdir(parents=True, exist_ok=True)
+        for f in src.glob("*.json"):
+            shutil.copy2(f, dest / f.name)
+            print(f"  wrote {dest / f.name}")
+    r = ex.run(["git", "checkout", "-B", branch], cwd=str(mono))
+    if not r.ok:
+        print(r.stderr)
+        return r.returncode
+    ex.run(["git", "add", "-A"], cwd=str(mono))
+    r = ex.run(
+        ["git", "commit", "-m", f"capture: {stack} fixtures {date}"],
+        cwd=str(mono),
+    )
+    if r.ok:
+        print(f"committed on {branch} in {mono}")
+    else:
+        print(f"nothing to commit or commit failed: {r.stderr or r.stdout}")
+    if push:
+        ex.run(["git", "push", "-u", "origin", branch], cwd=str(mono))
+        pr = ex.run(
+            [
+                "gh", "pr", "create",
+                "--base", base,
+                "--head", branch,
+                "--title", f"capture: {stack} fixtures {date}",
+                "--body", f"Auto-captured Desk edits from {stack}. Review before merge.",
+            ],
+            cwd=str(mono),
         )
-        if r.ok:
-            print(f"[{app}] committed on {branch}")
-        else:
-            print(f"[{app}] nothing to commit or commit failed: {r.stderr or r.stdout}")
-        if push:
-            base = "dev"
-            ex.run(["git", "push", "-u", "origin", branch], cwd=str(repo))
-            # Prefer gh if available
-            pr = ex.run(
-                ["gh", "pr", "create", "--base", base, "--head", branch,
-                 "--title", f"capture: {stack} fixtures {date} ({app})",
-                 "--body", "Auto-captured Desk edits from cloud stack. Review before merge."],
-                cwd=str(repo),
-            )
-            print(pr.stdout or pr.stderr)
+        print(pr.stdout or pr.stderr)
     return 0
 
 
+def _monorepo_sha(paths) -> str:
+    sha_file = paths.custom_apps / ".nando_monorepo_sha"
+    if sha_file.is_file():
+        return sha_file.read_text().strip()[:7]
+    mono = _monorepo_worktree()
+    if mono:
+        r = get_executor().run(["git", "rev-parse", "--short=7", "HEAD"], cwd=str(mono))
+        if r.ok and r.stdout.strip():
+            return r.stdout.strip()
+    return "unknown"
+
+
 def cmd_build(*, stack: str = "dev") -> int:
+    stack = normalize_stack(stack)
     paths = get_paths()
-    env_file = paths.env_file(stack if stack != "prod" else "main")
-    # Resolve app SHAs after fetch
+    env_file = paths.env_file(stack)
     ex = get_executor()
     fetch = paths.deployment / "fetch-custom-app.sh"
     r = ex.run(["bash", str(fetch), str(env_file)], cwd=str(paths.repo_root), timeout=600)
@@ -305,23 +374,14 @@ def cmd_build(*, stack: str = "dev") -> int:
     if not r.ok:
         print(r.stderr)
         return r.returncode
-    structure = load_structure()
-    env = load_stack_env(stack if stack != "prod" else "main")
-    sha_parts = []
-    for app in structure.apps:
-        repo = paths.custom_apps / app
-        r = ex.run(["git", "rev-parse", "--short=7", "HEAD"], cwd=str(repo))
-        short = r.stdout.strip() or "unknown"
-        sha_parts.append(f"{app.replace('nando_', '')}.{short}")
-        print(f"  {app}@{short}")
+    env = load_stack_env(stack)
+    short = _monorepo_sha(paths)
+    print(f"  apps@{short}")
     versions = load_versions()
-    tag = f"{versions['ERPNEXT_VERSION']}-frappe-{versions['FRAPPE_VERSION'].lstrip('v')}-{'-'.join(sha_parts)}"
+    tag = f"{versions['ERPNEXT_VERSION']}-frappe-{versions['FRAPPE_VERSION'].lstrip('v')}-apps.{short}"
     tag = tag.replace("/", "-")
     print(f"Building image tag: {tag}")
-    # Temporarily set CUSTOM_TAG via env for the build script
     build = paths.deployment / "build-custom-image.sh"
-    env_vars = os.environ.copy()
-    # Patch CUSTOM_TAG into a temp env file
     with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as tf:
         text = env_file.read_text()
         lines = []
@@ -348,13 +408,18 @@ def cmd_build(*, stack: str = "dev") -> int:
     return 0
 
 
-def cmd_deploy_dev(*, skip_drift: bool = False, with_build: bool = False) -> int:
+def cmd_deploy(*, stack: str = "dev", skip_drift: bool = False, with_build: bool = False) -> int:
+    """Deploy to dev or quality (drift-gated). Use promote for prod."""
+    stack = normalize_stack(stack)
+    if stack == "main":
+        print("Use `nando-erp promote` for prod")
+        return 1
     if not skip_drift:
-        rc = cmd_drift(stack="dev")
+        rc = cmd_drift(stack=stack)
         if rc != 0:
             return rc
     paths = get_paths()
-    env_file = paths.env_file("dev")
+    env_file = paths.env_file(stack)
     argv = ["bash", str(paths.deployment / "deploy-stack.sh"), str(env_file)]
     if with_build:
         argv.append("--with-build")
@@ -363,6 +428,11 @@ def cmd_deploy_dev(*, skip_drift: bool = False, with_build: bool = False) -> int
     if not r.ok:
         print(r.stderr)
     return r.returncode
+
+
+def cmd_deploy_dev(*, skip_drift: bool = False, with_build: bool = False) -> int:
+    """Back-compat wrapper."""
+    return cmd_deploy(stack="dev", skip_drift=skip_drift, with_build=with_build)
 
 
 def cmd_backup(
@@ -421,47 +491,86 @@ def cmd_backup(
     return 0
 
 
-def cmd_promote(*, image_tag: str | None = None, yes: bool = False, actor: str | None = None) -> int:
-    """Promote the image currently running on cloud-dev to prod."""
+def _image_apps_sha(image_ref: str) -> str | None:
+    """Extract apps.<sha7> from an image tag like …-apps.abc1234."""
+    tag = image_ref.split(":", 1)[-1]
+    for part in tag.split("-"):
+        if part.startswith("apps.") and len(part) >= 12:
+            return part.split(".", 1)[1]
+    # also handle apps.SHA glued: look for apps.
+    if "apps." in tag:
+        return tag.rsplit("apps.", 1)[-1][:7]
+    return None
+
+
+def _trees_match(expect_sha: str, image_sha: str, mono: Path) -> bool:
+    """True if expect_sha and image_sha point at the same git tree in the monorepo."""
+    ex = get_executor()
+    for label, sha in (("expect", expect_sha), ("image", image_sha)):
+        r = ex.run(["git", "rev-parse", "--verify", f"{sha}^{{tree}}"], cwd=str(mono))
+        if not r.ok:
+            # try short SHA resolve
+            r = ex.run(["git", "rev-parse", "--verify", f"{sha}^{{tree}}"], cwd=str(mono))
+        if not r.ok:
+            print(f"Could not resolve tree for {label} sha {sha}: {r.stderr or r.stdout}")
+            return False
+    r1 = ex.run(["git", "rev-parse", f"{expect_sha}^{{tree}}"], cwd=str(mono))
+    r2 = ex.run(["git", "rev-parse", f"{image_sha}^{{tree}}"], cwd=str(mono))
+    return r1.ok and r2.ok and r1.stdout.strip() == r2.stdout.strip()
+
+
+def cmd_promote(
+    *,
+    image_tag: str | None = None,
+    yes: bool = False,
+    actor: str | None = None,
+    source: str = "quality",
+    target: str = "main",
+    expect_sha: str | None = None,
+) -> int:
+    """Promote the image running on source (default Quality) to target (prod)."""
     if not yes:
         print("Refusing: pass --yes to confirm promotion (logged).")
         return 1
+    source = normalize_stack(source)
+    target = normalize_stack(target)
+    if target != "main":
+        print("Promote target must be main/prod")
+        return 1
     actor = actor or os.environ.get("USER") or os.environ.get("NANDO_ACTOR") or "unknown"
-    drift_rc = cmd_drift(stack="dev")
+    drift_rc = cmd_drift(stack=source)
     if drift_rc != 0:
-        print("Promote blocked: cloud-dev has fixture drift")
+        print(f"Promote blocked: {source} has fixture drift")
         return drift_rc
 
-    dev = Stack("dev")
+    src_stack = Stack(source)
     main = Stack("main")
-    # Resolve running image on dev
-    r = get_executor().run(
-        ["docker", "inspect", "-f", "{{.Config.Image}}", f"{dev.project}-backend-1"],
-        cwd=str(get_paths().repo_root),
-    )
-    running = (r.stdout or "").strip()
+    running = src_stack.running_backend_image()
     if not running:
-        # try compose ps
-        r = dev.run_compose("ps", "-q", "backend")
-        cid = r.stdout.strip().splitlines()[0] if r.ok and r.stdout.strip() else ""
-        if cid:
-            r = get_executor().run(["docker", "inspect", "-f", "{{.Config.Image}}", cid])
-            running = r.stdout.strip()
-    if not running:
-        print("Could not resolve running cloud-dev backend image")
+        print(f"Could not resolve running {source} backend image")
         return 1
-    print(f"Cloud-dev running image: {running}")
+    print(f"{source} running image: {running}")
     if image_tag and running != image_tag and not running.endswith(":" + image_tag.split(":")[-1]):
-        print(f"Requested {image_tag} but cloud-dev runs {running}")
+        print(f"Requested {image_tag} but {source} runs {running}")
         return 1
 
+    if expect_sha:
+        image_sha = _image_apps_sha(running)
+        mono = _monorepo_worktree()
+        if not image_sha or not mono:
+            print("Promote blocked: could not verify expect_sha against image tag / monorepo")
+            return 1
+        if not _trees_match(expect_sha, image_sha, mono):
+            print(
+                f"Promote blocked: expect_sha tree ({expect_sha}) != image apps sha tree ({image_sha})"
+            )
+            return 1
+        print(f"Tree match OK: expect_sha={expect_sha} image_apps={image_sha}")
+
     src_image = running
-    dest_image = f"{main.custom_image}:{main.custom_tag}"
-    # If CUSTOM_TAG on main is a placeholder, reuse the source tag name
-    if image_tag:
-        dest_image = image_tag if ":" in image_tag else f"{main.custom_image}:{image_tag}"
+    if image_tag and ":" in image_tag:
+        dest_image = image_tag
     else:
-        # retag with same tag component under prod image name
         tag = src_image.split(":", 1)[-1]
         dest_image = f"{main.custom_image}:{tag}"
 
@@ -483,7 +592,6 @@ def cmd_promote(*, image_tag: str | None = None, yes: bool = False, actor: str |
         print(r.stderr)
         return r.returncode
 
-    # Update main env CUSTOM_TAG for render/deploy
     paths = get_paths()
     env_file = paths.env_file("main")
     tag_only = dest_image.split(":", 1)[-1]
@@ -496,7 +604,6 @@ def cmd_promote(*, image_tag: str | None = None, yes: bool = False, actor: str |
             out_lines.append(f"CUSTOM_IMAGE={dest_image.split(':', 1)[0]}")
         else:
             out_lines.append(line)
-    # Write a temp env for this deploy so we don't require committing secrets/tag churn
     with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as tf:
         tf.write("\n".join(out_lines) + "\n")
         tmp_env = tf.name
@@ -517,8 +624,10 @@ def cmd_promote(*, image_tag: str | None = None, yes: bool = False, actor: str |
         "ts": datetime.now(timezone.utc).isoformat(),
         "actor": actor,
         "action": "promote",
+        "source": source,
         "source_image": src_image,
         "dest_image": dest_image,
+        "expect_sha": expect_sha,
     }
     audit_path = paths.deployment / "logs" / "promote-audit.jsonl"
     audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -529,13 +638,23 @@ def cmd_promote(*, image_tag: str | None = None, yes: bool = False, actor: str |
     return 0
 
 
-def cmd_refresh(*, target: str = "dev", skip_drift: bool = False, with_files: bool = False) -> int:
+def cmd_refresh(
+    *,
+    target: str = "dev",
+    skip_drift: bool = False,
+    skip_if_drift: bool = False,
+    with_files: bool = False,
+) -> int:
     """Restore latest prod GCS backup into target, sanitize, migrate."""
     if target == "local":
         return _refresh_local(with_files=with_files)
+    target = normalize_stack(target) if target != "local" else target
     if not skip_drift:
-        rc = cmd_drift(stack=target if target != "prod" else "dev")
+        rc = cmd_drift(stack=target)
         if target != "main" and rc != 0:
+            if skip_if_drift:
+                print(f"Refresh skipped: uncaptured drift on {target}")
+                return 0
             print("Refresh blocked: uncaptured drift on target")
             return rc
 
@@ -758,4 +877,89 @@ if APPLY:
         return r.returncode
     if not apply:
         print("Re-run with --apply after reviewing the assignment list.")
+    return 0
+
+
+def cmd_release(*, yes: bool = False, actor: str | None = None) -> int:
+    """Hotfix release from Quality: capture → push quality → open PRs to master and dev.
+
+    Does not promote to prod by itself — merging the quality→master PR (or the
+    push-to-master CI job) runs promote. Rebuild of Quality is triggered by the
+    push to the quality branch.
+    """
+    if not yes:
+        print("Refusing: pass --yes to confirm release from Quality.")
+        return 1
+    actor = actor or os.environ.get("USER") or os.environ.get("NANDO_ACTOR") or "unknown"
+    mono = _monorepo_worktree()
+    if not mono:
+        print("No monorepo checkout for release")
+        return 1
+
+    # Capture Quality Desk into monorepo working tree
+    rc = cmd_export(target="quality")
+    if rc != 0:
+        return rc
+    paths = get_paths()
+    structure = load_structure()
+    ex = get_executor()
+    for app in structure.apps:
+        src = paths.custom_apps / app / app / "fixtures"
+        if not src.is_dir():
+            continue
+        dest = mono / structure.path_for(app) / app / "fixtures"
+        dest.mkdir(parents=True, exist_ok=True)
+        for f in src.glob("*.json"):
+            shutil.copy2(f, dest / f.name)
+
+    # Commit directly on quality (bot identity expected in git config / GH App)
+    r = ex.run(["git", "fetch", "origin", "quality"], cwd=str(mono))
+    r = ex.run(["git", "checkout", "-B", "quality", "origin/quality"], cwd=str(mono))
+    if not r.ok:
+        # quality may only exist locally
+        r = ex.run(["git", "checkout", "-B", "quality"], cwd=str(mono))
+    if not r.ok:
+        print(r.stderr)
+        return r.returncode
+    ex.run(["git", "add", "-A"], cwd=str(mono))
+    date = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    r = ex.run(
+        ["git", "commit", "-m", f"release: Quality capture {date} ({actor})"],
+        cwd=str(mono),
+    )
+    if r.ok:
+        print(f"committed release capture on quality ({date})")
+    else:
+        print(f"nothing new to commit: {r.stderr or r.stdout}")
+
+    r = ex.run(["git", "push", "origin", "quality"], cwd=str(mono))
+    print(r.stdout or r.stderr)
+    if not r.ok:
+        return r.returncode
+
+    for base in ("master", "dev"):
+        # Open PR if none open already
+        check = ex.run(
+            ["gh", "pr", "list", "--base", base, "--head", "quality", "--json", "number", "-q", "length"],
+            cwd=str(mono),
+        )
+        if check.ok and (check.stdout or "").strip() not in {"", "0"}:
+            print(f"PR quality → {base} already open")
+            continue
+        pr = ex.run(
+            [
+                "gh", "pr", "create",
+                "--base", base,
+                "--head", "quality",
+                "--title", f"release: Quality → {base} ({date})",
+                "--body", (
+                    f"Hotfix release captured from Quality by {actor}.\n\n"
+                    f"- Merging into **master** triggers promote of the Quality image to prod.\n"
+                    f"- Merging into **dev** back-merges the hotfix lane."
+                ),
+            ],
+            cwd=str(mono),
+        )
+        print(pr.stdout or pr.stderr)
+    print("Release capture pushed. Approve/merge PRs to complete.")
     return 0

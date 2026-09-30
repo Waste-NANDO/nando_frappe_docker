@@ -1,13 +1,13 @@
 # 03 — Deploy to cloud-dev
 
-Build a commit-pinned image from app `dev` branches and deploy the `:3003` stack.
+Build a commit-pinned image from `nando-erp-modules` branch `dev` and deploy the `:3003` stack.
 
 Run these on the **ERP host** (or from your laptop with `NANDO_EXECUTOR=ssm` — see [09](09-cli-ssm-api.md)).
 
 ## Prerequisites
 
-- App PRs merged into `dev` on both repos (as needed).
-- `github.env` present on the host (PAT for private app clones).
+- App PRs merged into `dev` on [nando-erp-modules](https://github.com/Waste-NANDO/nando-erp-modules).
+- `github.env` present on the host (PAT / GitHub App for private clones).
 - Host CLI installed ([09](09-cli-ssm-api.md)).
 
 ## Steps
@@ -30,8 +30,8 @@ nando-erp build --stack dev
 
 This:
 
-1. Fetches custom apps at the `dev` branch pins
-2. Records short SHAs in the image tag
+1. Fetches `nando-erp-modules` @ `dev` and materializes each app into `custom-apps/`
+2. Records the monorepo short SHA in the image tag (`…-apps.<sha7>`)
 3. Runs `build-custom-image.sh` and renders `erpnext-dev.yaml`
 
 Note the printed `IMAGE_TAG=…`.
@@ -40,26 +40,17 @@ Note the printed `IMAGE_TAG=…`.
 
 ```bash
 nando-erp deploy dev
+# or: nando-erp deploy dev --with-build
 ```
 
-This runs drift check again, then `deploy-stack.sh` (compose up → materialize assets → `bench migrate` → clear-cache).
-
-`migrate` **force-imports** fixture JSON from the image. That is intentional: git → image → site.
+Drift is checked again unless `--skip-drift`.
 
 ### 4. Smoke-check
 
-- Open `https://apps.internal.nandoai.com:3003`
-- Confirm the change (DocType, script, workspace, …)
-- Watch logs if migrate failed: `docker compose -p erpnext -f nando-deployment/erpnext-dev.yaml logs backend --tail 200`
+Open `https://apps.internal.nandoai.com:3003`.
 
-## Flags
-
-| Flag | Meaning |
-|------|---------|
-| `nando-erp deploy dev --with-build` | Build + deploy in one shot |
-| `nando-erp deploy dev --skip-drift` | **Emergency only** — skips the gate (can wipe uncaptured Desk edits) |
-
-## After deploy
+## Next
 
 - Need prod data on cloud-dev? → [06 — Refresh data](06-refresh-data.md)
-- Ready for prod? → [05 — Promote to prod](05-promote-prod.md)
+- Ready for UAT? → PR `dev` → `quality`, then `nando-erp build --stack quality && nando-erp deploy quality`
+- Hotfix / prod? → [10 — Release hotfix](10-release-hotfix.md) / [05 — Promote](05-promote-prod.md)

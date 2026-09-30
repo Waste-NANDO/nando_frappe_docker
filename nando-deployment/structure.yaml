@@ -3,18 +3,29 @@
 #
 # Each app owns exactly one module. Every fixture document must have its
 # `module` field set to that app's module (Custom Field / Property Setter included).
+#
+# Apps live as sibling folders in one repo (nando-erp-modules). Shared
+# NANDO_APPS_REPO / NANDO_APPS_BRANCH; each app has a `path` inside that repo.
 
 apps:
   nando_crm:
     module: NANDO_CRM
-    repo_env: NANDO_CRM_REPO
-    branch_env: NANDO_CRM_BRANCH
+    repo_env: NANDO_APPS_REPO
+    branch_env: NANDO_APPS_BRANCH
+    path: nando_crm
   nando_fulfillment:
     module: NANDO_Operations
-    repo_env: NANDO_FULFILLMENT_REPO
-    branch_env: NANDO_FULFILLMENT_BRANCH
+    repo_env: NANDO_APPS_REPO
+    branch_env: NANDO_APPS_BRANCH
+    path: nando_fulfillment
+  nando_hr:
+    module: NANDO_HR
+    repo_env: NANDO_APPS_REPO
+    branch_env: NANDO_APPS_BRANCH
+    path: nando_hr
 
 # DocTypes exported as fixtures (filtered by module unless noted).
+# Each app's hooks.py fixtures list must cover every entry here.
 structure_doctypes:
   - DocType
   - Custom Field

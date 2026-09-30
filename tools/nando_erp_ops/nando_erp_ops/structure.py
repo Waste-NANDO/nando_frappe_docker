@@ -16,6 +16,7 @@ class AppSpec:
     module: str
     repo_env: str
     branch_env: str
+    path: str = ""  # folder inside monorepo; defaults to key
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,10 @@ class StructureConfig:
                 return key
         return None
 
+    def path_for(self, app: str) -> str:
+        spec = self.apps[app]
+        return spec.path or app
+
 
 def load_structure(path: Path | None = None) -> StructureConfig:
     path = path or get_paths().structure_yaml
@@ -45,6 +50,7 @@ def load_structure(path: Path | None = None) -> StructureConfig:
             module=cfg["module"],
             repo_env=cfg.get("repo_env", ""),
             branch_env=cfg.get("branch_env", ""),
+            path=cfg.get("path", key),
         )
     return StructureConfig(
         apps=apps,
@@ -56,7 +62,10 @@ def load_structure(path: Path | None = None) -> StructureConfig:
 
 def hooks_fixtures_for_app(module: str, structure_doctypes: list[str]) -> list[dict[str, Any]]:
     """Generate the hooks.py fixtures list shape for documentation / lint."""
-    return [
-        {"dt": dt, "filters": [["module", "=", module]]}
-        for dt in structure_doctypes
-    ]
+    no_module = {"Desktop Icon", "Role", "Custom DocPerm"}
+    out: list[dict[str, Any]] = []
+    for dt in structure_doctypes:
+        if dt in no_module:
+            continue
+        out.append({"dt": dt, "filters": [["module", "=", module]]})
+    return out
